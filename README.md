@@ -37,20 +37,33 @@ WebGL-Build läuft deshalb in CI auf einem x86_64-GitHub-Runner. Die
 Lizenzaktivierung dafür hängt zwingend an einem echten, interaktiven
 Unity-Account-Login -- game-ci hat den früheren rein-CI-basierten
 Aktivierungsweg (Actions-Artifact-Datei hochladen) mittlerweile abgeschaltet,
-ein lokaler Schritt ist jetzt unvermeidbar. Einmalig nötig, auf einem
-beliebigen Windows/Mac/Linux-Rechner mit Unity Hub:
+ein lokaler Schritt mit echter GUI ist jetzt unvermeidbar.
 
-1. [Unity Hub](https://unity.com/download) installieren, mit einem
-   (kostenlosen) Unity-Account einloggen.
-2. Preferences → Licenses → "Add" → "Get a free personal license".
-3. Die dabei erzeugte Lizenzdatei öffnen:
-   - Linux: `~/.local/share/unity3d/Unity/Unity_lic.ulf`
-   - Windows: `C:\ProgramData\Unity\Unity_lic.ulf`
-   - Mac: `/Library/Application Support/Unity/Unity_lic.ulf`
-4. Drei Secrets im Repo hinterlegen (Settings → Secrets and variables →
-   Actions → "New repository secret"): `UNITY_LICENSE` (kompletter Inhalt
-   der `.ulf`-Datei), `UNITY_EMAIL`, `UNITY_PASSWORD` (dieselben
-   Zugangsdaten wie der Unity-Account).
+**Ohne eigenen Windows/Mac/Linux-Rechner** (z. B. nur Handy): dieses Repo hat
+einen fertigen [GitHub Codespace](https://docs.github.com/codespaces) mit
+Browser-Desktop, extra dafür gebaut.
+
+1. Auf github.com im Repo: "Code" → Tab "Codespaces" → "Create codespace on main".
+   Läuft komplett im Browser, auch auf dem Handy. Der Codespace installiert
+   beim Start automatisch Unity Hub (`.devcontainer/install-unity-hub.sh`).
+2. Sobald fertig: Tab "PORTS" → Port 6080 öffnen (Symbol für "im Browser
+   öffnen") → Passwort `unity`. Das ist ein Linux-Desktop im Browser.
+3. Dort per Rechtsklick ein Terminal öffnen, `unityhub` eingeben, mit
+   (kostenlosem) Unity-Account einloggen, Preferences → Licenses → "Add" →
+   "Get a free personal license".
+4. Zurück im normalen Codespaces-Datei-Explorer (nicht im Desktop-Tab):
+   `~/.local/share/unity3d/Unity/Unity_lic.ulf` öffnen, Inhalt kopieren.
+5. Drei Secrets im Repo hinterlegen (Settings → Secrets and variables →
+   Actions → "New repository secret"): `UNITY_LICENSE` (Inhalt der
+   `.ulf`-Datei), `UNITY_EMAIL`, `UNITY_PASSWORD` (dieselben Zugangsdaten
+   wie der Unity-Account).
+6. Codespace danach löschen (Codespaces-Übersicht → "..." → Delete) -- wird
+   nur für diesen einen Schritt gebraucht.
+
+**Mit eigenem Rechner:** [Unity Hub](https://unity.com/download) lokal
+installieren, Schritte 3-5 dort genauso durchführen (Lizenzdatei-Pfad unter
+Windows: `C:\ProgramData\Unity\Unity_lic.ulf`, Mac:
+`/Library/Application Support/Unity/Unity_lic.ulf`).
 
 Danach baut `ci.yml` bei jedem Push auf `main` automatisch WebGL, deployt es
 auf `cgo-app.de/restaurant/` -- kein weiterer manueller Schritt. Alles
