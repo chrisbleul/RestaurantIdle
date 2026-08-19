@@ -1,0 +1,20 @@
+node_modules/
+dist/
+*.log
+
+# .NET
+bin/
+obj/
+
+# Lokale Secrets
+infra/.env
+
+# Unity (kommt erst in Phase 0/2, aber schon vormerken)
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+*.csproj.user

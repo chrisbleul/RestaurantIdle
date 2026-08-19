@@ -1,0 +1,42 @@
+# Lokal:      docker compose --env-file .env up --build
+# Auf der EC2: docker compose --env-file .env pull && ... up -d   (zieht fertige
+#              Bilder von GHCR, siehe cgo-platform/bin/deploy-ssh-wrapper.sh) --
+#              dieselbe Datei.
+#
+# Nur Backend -- die Unity-Engine laeuft ausschliesslich lokal (PLAN.md
+# Abschnitt 5: "Die Engine laeuft ausschliesslich lokal. Die EC2 ist reines
+# Backend."), deshalb kein "web"-Service wie bei den anderen Apps.
+#
+# Datenbank: gemeinsamer platform-db-Stack (cgo-platform-Repo,
+# apps/platform-db, Arbeitsanweisung Abschnitt 10) statt eigenem
+# db-Service. cgo-platform-net ist das dafuer angelegte externe
+# Docker-Netzwerk (docker network create cgo-platform-net).
+
+name: restaurant-idle
+
+services:
+  api:
+    image: ghcr.io/${GHCR_OWNER:-chrisbleul}/restaurant-idle-api:${GIT_REVISION:-latest}
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      args:
+        GIT_REVISION: ${GIT_REVISION:-dev}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgres://restaurant_idle:${RESTAURANT_IDLE_DB_PASSWORD:?RESTAURANT_IDLE_DB_PASSWORD fehlt}@platform-db:5432/restaurant_idle
+      GIT_REVISION: ${GIT_REVISION:-dev}
+    networks:
+      - default
+      - cgo-platform-net
+    ports:
+      # Apps binden nur an 127.0.0.1, nie 0.0.0.0 (Plattform-Vertrag
+      # Abschnitt 3.1) -- erreichbar wird die App von aussen nur ueber das
+      # system-weite nginx (cgo-platform-Repo, nginx/snippets/app-restaurant.conf).
+      - '127.0.0.1:8098:3000'
+
+networks:
+  cgo-platform-net:
+    external: true
