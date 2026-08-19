@@ -1,4 +1,8 @@
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import Fastify from 'fastify';
+import fastifyStatic from '@fastify/static';
 import pg from 'pg';
 import { loadConfig } from './config.js';
 import { runMigrations } from './db/migrate.js';
@@ -29,6 +33,20 @@ await runMigrations(pool);
 registerHealthRoute(app, pool, config);
 registerPlatformAuth(app);
 registerSaveRoutes(app, pool);
+
+// Der WebGL-Build (Unity, siehe .github/workflows/webgl-build-deploy.yml) landet
+// hier als statische Dateien. nginx routet /restaurant/ bereits auf diesen
+// Port (Abschnitt 2 der Arbeitsanweisung schneidet den Praefix ab) -- kein
+// eigener "web"-Service noetig wie bei den anderen Apps mit Caddy davor.
+// Registrierung nach den API-Routen, damit /api/* Vorrang vor dem
+// Wildcard-Static-Handler behaelt. Ordner fehlt in lokaler Entwicklung ohne
+// Build -- dann bleibt "/" schlicht unbeantwortet statt beim Start zu crashen.
+const webglDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../public/webgl');
+if (existsSync(webglDir)) {
+  await app.register(fastifyStatic, { root: webglDir });
+} else {
+  app.log.warn({ webglDir }, 'Kein WebGL-Build gefunden, "/" liefert 404');
+}
 
 async function shutdown(signal: string): Promise<void> {
   app.log.info({ signal }, 'Beende');

@@ -12,6 +12,7 @@ RUN npm ci
 COPY apps/api/tsconfig.json ./
 COPY apps/api/src src
 COPY apps/api/migrations migrations
+COPY apps/api/public public
 RUN npm run build
 
 # Entwicklungsabhaengigkeiten aus dem Baum werfen, bevor er ins Laufzeitbild geht.
@@ -28,6 +29,7 @@ COPY --from=build /app/node_modules node_modules
 COPY --from=build /app/dist dist
 COPY --from=build /app/package.json ./
 COPY --from=build /app/migrations migrations
+COPY --from=build /app/public public
 
 # Nicht als root laufen. Das Bild bringt den Nutzer "node" bereits mit.
 USER node

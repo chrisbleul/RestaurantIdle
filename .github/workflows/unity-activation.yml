@@ -1,0 +1,32 @@
+# Einmaliger Hilfs-Workflow fuer die Unity-Personal-Lizenz. Nicht Teil der
+# eigentlichen CI -- nur manuell ("Run workflow" im Actions-Tab) auszuloesen,
+# um die .alf-Aktivierungsdatei zu erzeugen.
+#
+# Ablauf (einmalig, Nutzer-Schritt -- siehe README "Unity-CI einrichten"):
+#   1. Diesen Workflow manuell starten (Actions-Tab -> "unity-activation" -> "Run workflow")
+#   2. Die erzeugte .alf-Datei als Artifact herunterladen
+#   3. Auf https://license.unity3d.com/manual hochladen (kostenloser Unity-Account
+#      genuegt -- Personal-Lizenz) -> man bekommt eine .ulf-Datei zurueck
+#   4. Inhalt der .ulf-Datei als GitHub-Secret UNITY_LICENSE hinterlegen
+#      (Repo-Settings -> Secrets and variables -> Actions -> New repository secret)
+#   5. Zusaetzlich UNITY_EMAIL und UNITY_PASSWORD als Secrets hinterlegen
+#      (dieselben Zugangsdaten wie beim Unity-Account)
+# Danach braucht ci.yml keine weitere Handarbeit mehr.
+name: unity-activation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: game-ci/unity-request-activation-file@v2
+        id: activation
+        with:
+          unityVersion: 6000.0.32f1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unity-activation-file
+          path: ${{ steps.activation.outputs.filePath }}

@@ -3,9 +3,13 @@
 #              Bilder von GHCR, siehe cgo-platform/bin/deploy-ssh-wrapper.sh) --
 #              dieselbe Datei.
 #
-# Nur Backend -- die Unity-Engine laeuft ausschliesslich lokal (PLAN.md
-# Abschnitt 5: "Die Engine laeuft ausschliesslich lokal. Die EC2 ist reines
-# Backend."), deshalb kein "web"-Service wie bei den anderen Apps.
+# Kein eigener "web"-Service wie bei den anderen Apps: der Fastify-Server
+# liefert die statischen WebGL-Build-Dateien direkt mit aus
+# (apps/api/src/server.ts, apps/api/public/webgl -- von .github/workflows/ci.yml
+# als Artifact eingebettet, bevor das Image gebaut wird). Gebaut wird der
+# Unity-Build selbst nie hier -- die Engine laeuft ausschliesslich in CI
+# (PLAN.md Abschnitt 5), auf der EC2 landet nur das fertige, signaturlose
+# WebGL-Artefakt, bereits Teil des Images.
 #
 # Datenbank: gemeinsamer platform-db-Stack (cgo-platform-Repo,
 # apps/platform-db, Arbeitsanweisung Abschnitt 10) statt eigenem
