@@ -32,22 +32,29 @@ Projektplan: siehe `PLAN.md`. Stand: Phase 1 (Balancing), Phase 5
 
 ## Unity-CI einrichten (einmaliger Schritt, nicht automatisierbar)
 
-Unity Editor läuft nicht auf ARM/aarch64 (die EC2 ist Graviton) und braucht
-für CI eine Lizenzaktivierung, die zwingend an einen Unity-Account hängt --
-das kann kein Agent für dich erledigen. Einmalig nötig:
+Unity Editor läuft nicht auf ARM/aarch64 (die EC2 ist Graviton), der
+WebGL-Build läuft deshalb in CI auf einem x86_64-GitHub-Runner. Die
+Lizenzaktivierung dafür hängt zwingend an einem echten, interaktiven
+Unity-Account-Login -- game-ci hat den früheren rein-CI-basierten
+Aktivierungsweg (Actions-Artifact-Datei hochladen) mittlerweile abgeschaltet,
+ein lokaler Schritt ist jetzt unvermeidbar. Einmalig nötig, auf einem
+beliebigen Windows/Mac/Linux-Rechner mit Unity Hub:
 
-1. Falls noch nicht vorhanden: kostenlosen Account auf [unity.com](https://unity.com) anlegen.
-2. `.github/workflows/unity-activation.yml` manuell auslösen (Actions-Tab →
-   "unity-activation" → "Run workflow").
-3. Die erzeugte `.alf`-Datei aus dem Artifact herunterladen, auf
-   [license.unity3d.com/manual](https://license.unity3d.com/manual) hochladen
-   (Personal-Lizenz) → man bekommt eine `.ulf`-Datei zurück.
+1. [Unity Hub](https://unity.com/download) installieren, mit einem
+   (kostenlosen) Unity-Account einloggen.
+2. Preferences → Licenses → "Add" → "Get a free personal license".
+3. Die dabei erzeugte Lizenzdatei öffnen:
+   - Linux: `~/.local/share/unity3d/Unity/Unity_lic.ulf`
+   - Windows: `C:\ProgramData\Unity\Unity_lic.ulf`
+   - Mac: `/Library/Application Support/Unity/Unity_lic.ulf`
 4. Drei Secrets im Repo hinterlegen (Settings → Secrets and variables →
-   Actions): `UNITY_LICENSE` (Inhalt der `.ulf`-Datei), `UNITY_EMAIL`,
-   `UNITY_PASSWORD` (dieselben Zugangsdaten wie der Unity-Account).
+   Actions → "New repository secret"): `UNITY_LICENSE` (kompletter Inhalt
+   der `.ulf`-Datei), `UNITY_EMAIL`, `UNITY_PASSWORD` (dieselben
+   Zugangsdaten wie der Unity-Account).
 
 Danach baut `ci.yml` bei jedem Push auf `main` automatisch WebGL, deployt es
-auf `cgo-app.de/restaurant/` -- kein weiterer manueller Schritt.
+auf `cgo-app.de/restaurant/` -- kein weiterer manueller Schritt. Alles
+andere (Repo, Deploy-Key, Backend, Registrierung) ist bereits eingerichtet.
 
 ## Entwicklung
 
