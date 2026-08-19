@@ -1,10 +1,11 @@
-# Nutzt die im CGOPlattform-Repo gebauten wiederverwendbaren Bausteine
-# (verify-node, deploy) -- selbes Muster wie ToDoCGO/EasyCar/etc.
-# (Arbeitsauftrag AP4.1). Der Unity-WebGL-Build ist neu (erstes native/WebGL-
-# Projekt auf der Plattform) und laeuft deshalb inline statt ueber
-# build-image.yml: der WebGL-Build muss vor dem Docker-Image-Build fertig sein
-# und als Artifact eingebettet werden, dafuer bietet der reusable
-# build-image.yml keinen Einhaengepunkt.
+# verify-api und deploy sind bewusst NICHT ueber die wiederverwendbaren
+# Bausteine aus dem CGOPlattform-Repo eingebunden (anders als bei den anderen
+# Apps, AP4.1): dieses Repo ist public (unbegrenzte Actions-Minuten fuer die
+# langen Unity-Builds), CGOPlattform ist privat -- ein oeffentliches Repo
+# kann grundsaetzlich keinen "workflow_call"-Baustein aus einem privaten Repo
+# aufrufen (GitHub-Sicherheitsgrenze, keine Einstellung hebelt das aus). Die
+# paar Schritte sind deshalb inline dupliziert, inhaltlich identisch zu
+# verify-node.yml/deploy.yml.
 name: ci
 
 on:
@@ -14,13 +15,23 @@ on:
 
 jobs:
   verify-api:
-    uses: chrisbleul/CGOPlattform/.github/workflows/verify-node.yml@main
-    with:
-      working-directory: apps/api
-      verify-commands: |
-        npm run typecheck
-        npm test
-        npm run build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/api/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --audit-level=high
+        continue-on-error: true
 
   verify-balancing-core:
     runs-on: ubuntu-24.04-arm
@@ -33,7 +44,7 @@ jobs:
 
   # Unity Editor gibt es nur fuer x86_64 Linux (nicht arm64, siehe
   # PLAN.md/Notizen zur EC2 -- Graviton) -- deshalb ubuntu-latest statt der
-  # arm64-Runner aus build-image.yml. Nur bei main-Push: ein WebGL-Build
+  # arm64-Runner fuer die anderen Jobs. Nur bei main-Push: ein WebGL-Build
   # dauert 15-40 Minuten, das auf jeden PR/Branch-Push loszulassen waere reine
   # Wartezeit ohne Nutzen.
   webgl-build:
@@ -94,7 +105,11 @@ jobs:
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build-api-image
-    uses: chrisbleul/CGOPlattform/.github/workflows/deploy.yml@main
-    with:
-      slug: restaurant
-    secrets: inherit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy auf die EC2
+        run: |
+          install -m 600 -D /dev/null ~/.ssh/id_deploy
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/id_deploy \
+            ubuntu@${{ secrets.DEPLOY_HOST }} "restaurant ${{ github.sha }}"
