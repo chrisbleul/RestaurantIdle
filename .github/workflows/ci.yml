@@ -40,7 +40,7 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - run: dotnet test game/BalancingCore.sln
+      - run: dotnet test game/RestaurantIdle.sln
 
   # Unity Editor gibt es nur fuer x86_64 Linux (nicht arm64, siehe
   # PLAN.md/Notizen zur EC2 -- Graviton) -- deshalb ubuntu-latest statt der

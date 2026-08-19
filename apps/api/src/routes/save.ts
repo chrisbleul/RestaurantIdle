@@ -16,6 +16,12 @@ const SaveBody = z.object({
   prestigeStars: NumericString,
 });
 
+/** Serverautoritative Offline-Zeit (Plan Abschnitt 2/8) -- eigene Funktion, damit die Deckelung ohne DB testbar ist. */
+export function computeOfflineSeconds(lastSeenAt: Date, now: Date): number {
+  const elapsedSeconds = (now.getTime() - lastSeenAt.getTime()) / 1000;
+  return Math.max(0, Math.min(elapsedSeconds, OFFLINE_CAP_SECONDS));
+}
+
 export function registerSaveRoutes(app: FastifyInstance, pool: Pool): void {
   app.get('/api/save', { preHandler: requireAuth }, async (request): Promise<SaveResponse> => {
     const { rows } = await pool.query<SaveRow>(
@@ -29,8 +35,7 @@ export function registerSaveRoutes(app: FastifyInstance, pool: Pool): void {
       return { state: {}, lifetimeRevenue: '0', prestigeStars: '0', offlineSeconds: 0 };
     }
 
-    const elapsedSeconds = (Date.now() - new Date(row.last_seen_at).getTime()) / 1000;
-    const offlineSeconds = Math.max(0, Math.min(elapsedSeconds, OFFLINE_CAP_SECONDS));
+    const offlineSeconds = computeOfflineSeconds(new Date(row.last_seen_at), new Date());
 
     return {
       state: row.state,
