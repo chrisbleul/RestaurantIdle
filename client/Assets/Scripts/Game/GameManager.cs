@@ -22,6 +22,12 @@ namespace RestaurantIdle.Game
         private BigDouble lifetimeRevenue;
         private float timeSinceLastSync;
 
+        // InitializeGame() laedt asynchron (Backend-Request ueber mehrere Frames)
+        // -- Update() etc. laufen aber schon ab dem ersten Frame und wuerden ohne
+        // dieses Flag mit NullReferenceException auf "state" abstuerzen, bevor
+        // InitializeGame() ueberhaupt fertig ist.
+        private bool isInitialized;
+
         private Text headerLabel;
         private Button marketingButtonRef;
         private readonly List<StationRow> rows = new();
@@ -80,6 +86,8 @@ namespace RestaurantIdle.Game
             // Deckt insbesondere den Umzug eines bisher rein lokalen
             // Spielstands aufs Backend ab (erster Start nach dieser Aenderung).
             Persist();
+
+            isInitialized = true;
         }
 
         private BigDouble SumManagedYieldPerSecond()
@@ -137,6 +145,11 @@ namespace RestaurantIdle.Game
 
         private void Update()
         {
+            if (!isInitialized)
+            {
+                return;
+            }
+
             var factor = CurrentCapacityFactor();
             var earnedThisFrame = BigDouble.Zero;
 
@@ -161,11 +174,17 @@ namespace RestaurantIdle.Game
             }
         }
 
-        private void OnApplicationQuit() => PersistLocal();
+        private void OnApplicationQuit()
+        {
+            if (isInitialized)
+            {
+                PersistLocal();
+            }
+        }
 
         private void OnApplicationPause(bool paused)
         {
-            if (paused)
+            if (paused && isInitialized)
             {
                 Persist();
             }
