@@ -5,65 +5,65 @@ using BreakInfinity;
 namespace RestaurantIdle.Game
 {
     /// <summary>
-    /// Laufzeit-Zustand einer Station: wie viele besessen, wie weit der aktuelle
-    /// Produktionszyklus fortgeschritten ist. Reine Logik, kein MonoBehaviour --
-    /// so bleibt sie ohne Unity-Bootstrap testbar (Plan Abschnitt 2: "als reines
-    /// C#-Modul ohne Unity-Abhaengigkeit").
+    /// Laufzeit-Zustand einer einzelnen Station-Instanz. Kennt die eigene
+    /// <see cref="StationDefinition"/> absichtlich nicht (kein gespeichertes
+    /// Feld dafuer) -- die kommt vom Aufrufer (GameManager, ueber den Index in
+    /// StationCatalog.All), damit sich nichts nach dem Laden eines Spielstands
+    /// erst wieder "verdrahten" muss.
     /// </summary>
     [Serializable]
     public class Station
     {
         public int OwnedCount;
         public double CycleProgressSeconds;
-        public bool HasRecipeUpgrade;
 
-        public BigDouble NextCost => CostCurve.Cost(StationDefinition.BaseCost, StationDefinition.CostGrowthRate, OwnedCount);
+        /// <summary>Manager ersetzt das manuelle Antippen (Plan Abschnitt 1) -- ohne ihn produziert Tick() nichts.</summary>
+        public bool HasManager;
 
-        public bool CanAfford(BigDouble revenue) => OwnedCount == 0 ? revenue >= StationDefinition.BaseCost : revenue >= NextCost;
+        public BigDouble NextCost(StationDefinition def) =>
+            CostCurve.Cost(def.BaseCost, def.CostGrowthRate, OwnedCount);
 
-        public void Buy()
-        {
-            OwnedCount++;
-        }
+        public void Buy() => OwnedCount++;
 
-        /// <summary>Ertrag pro einzelnem abgeschlossenen Zyklus -- Meilenstein-Boni (Plan Abschnitt 2) und Rezept-Upgrade eingerechnet.</summary>
-        public BigDouble YieldPerCycle
-        {
-            get
-            {
-                var yield = StationDefinition.BaseYield * Milestones.Multiplier(OwnedCount);
-                if (HasRecipeUpgrade)
-                {
-                    yield *= 2;
-                }
-                return yield;
-            }
-        }
+        public BigDouble YieldPerCycle(StationDefinition def) =>
+            def.BaseYield * Milestones.Multiplier(OwnedCount);
 
-        /// <summary>Ertrag pro Sekunde -- fuer Offline-Berechnung und UI-Anzeige (kein tatsaechlicher Tick).</summary>
-        public BigDouble YieldPerSecond => OwnedCount == 0 ? BigDouble.Zero : YieldPerCycle * OwnedCount / StationDefinition.CycleSeconds;
+        public BigDouble YieldPerSecond(StationDefinition def) =>
+            OwnedCount == 0 ? BigDouble.Zero : YieldPerCycle(def) * OwnedCount / def.CycleSeconds;
 
         /// <summary>
-        /// Rueckt den Zyklus um deltaSeconds vor und gibt den Ertrag aller in dieser
-        /// Zeitspanne abgeschlossenen Zyklen zurueck (0, wenn OwnedCount == 0 --
-        /// Idle-Produktion setzt Personal/eine Station voraus).
+        /// Rueckt den Zyklus um deltaSeconds vor. Ohne Manager (oder ohne
+        /// besessene Einheiten) ein No-Op -- reines Antippen ueber
+        /// <see cref="ProduceNow"/> bleibt dann der einzige Weg zu Ertrag.
         /// </summary>
-        public BigDouble Tick(double deltaSeconds)
+        public BigDouble Tick(StationDefinition def, double deltaSeconds)
+        {
+            if (OwnedCount == 0 || !HasManager)
+            {
+                return BigDouble.Zero;
+            }
+
+            CycleProgressSeconds += deltaSeconds;
+            var completedCycles = (int)(CycleProgressSeconds / def.CycleSeconds);
+            if (completedCycles <= 0)
+            {
+                return BigDouble.Zero;
+            }
+
+            CycleProgressSeconds -= completedCycles * def.CycleSeconds;
+            return YieldPerCycle(def) * OwnedCount * completedCycles;
+        }
+
+        /// <summary>Manueller Klick -- schliesst den aktuellen Zyklus sofort ab, unabhaengig vom Manager.</summary>
+        public BigDouble ProduceNow(StationDefinition def)
         {
             if (OwnedCount == 0)
             {
                 return BigDouble.Zero;
             }
 
-            CycleProgressSeconds += deltaSeconds;
-            var completedCycles = (int)(CycleProgressSeconds / StationDefinition.CycleSeconds);
-            if (completedCycles <= 0)
-            {
-                return BigDouble.Zero;
-            }
-
-            CycleProgressSeconds -= completedCycles * StationDefinition.CycleSeconds;
-            return YieldPerCycle * OwnedCount * completedCycles;
+            CycleProgressSeconds = 0;
+            return YieldPerCycle(def);
         }
     }
 }

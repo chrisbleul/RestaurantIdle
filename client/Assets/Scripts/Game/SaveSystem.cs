@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using BalancingCore;
 using UnityEngine;
 
 namespace RestaurantIdle.Game
@@ -24,17 +25,35 @@ namespace RestaurantIdle.Game
         {
             if (!File.Exists(SavePath))
             {
-                return new GameState();
+                return NewGame();
             }
 
             try
             {
-                return JsonUtility.FromJson<GameState>(File.ReadAllText(SavePath)) ?? new GameState();
+                var state = JsonUtility.FromJson<GameState>(File.ReadAllText(SavePath)) ?? NewGame();
+                EnsureStationSlots(state);
+                return state;
             }
             catch (Exception e)
             {
                 Debug.LogWarning($"Speicherstand beschaedigt, starte neu: {e.Message}");
-                return new GameState();
+                return NewGame();
+            }
+        }
+
+        private static GameState NewGame()
+        {
+            var state = new GameState();
+            EnsureStationSlots(state);
+            return state;
+        }
+
+        /// <summary>Fuellt fehlende Stationen mit leeren Instanzen auf -- betrifft neue Spielstaende und alte, falls der Katalog waechst.</summary>
+        private static void EnsureStationSlots(GameState state)
+        {
+            while (state.Stations.Count < StationCatalog.All.Count)
+            {
+                state.Stations.Add(new Station());
             }
         }
     }

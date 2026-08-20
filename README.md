@@ -1,8 +1,10 @@
 # Restaurant Idle Game
 
 Projektplan: siehe `PLAN.md`. Stand: Phase 1 (Balancing), Phase 5
-(Backend-Grundgerüst, live auf `cgo-app.de`) und ein erster Phase-2-Prototyp
-(eine Station, Tick-Loop, lokaler Save) sind umgesetzt.
+(Backend-Grundgerüst, live auf `cgo-app.de`) und Phase 2/3 im Client (alle
+sieben Stationen, Manager, Marketing/Gästestrom, lokaler Save) sind
+umgesetzt. WebGL-CI ist eingerichtet, aber noch nicht grün -- siehe
+"Bekannte offene Punkte" unten.
 
 ## Struktur
 
@@ -13,12 +15,18 @@ Projektplan: siehe `PLAN.md`. Stand: Phase 1 (Balancing), Phase 5
 - `client` -- Unity-Projekt (2D URP). `Assets/Scripts/BalancingCore` ist eine
   1:1-Kopie von `game/BalancingCore` (bewusst dupliziert statt verlinkt --
   Unity kompiliert alles unter `Assets/` selbst, ein Projektverweis über
-  Ordnergrenzen hinweg wäre nur Fragilität). `Assets/Scripts/Game` ist der
-  Phase-2-Prototyp: `Station.cs`/`StationDefinition.cs` (eine Produktions-
-  Station, Rezept-Upgrade), `GameManager.cs` (Tick-Loop, baut sein UI zur
-  Laufzeit selbst -- kein Art-Pass vor Phase 4), `SaveSystem.cs` (lokaler
-  JSON-Save). `Assets/Editor/CIBuild.cs` baut Szene und WebGL-Player
-  programmatisch für CI (robuster als eine handgepflegte `.unity`-Datei).
+  Ordnergrenzen hinweg wäre nur Fragilität) -- inklusive der neuen
+  `StationCatalog.cs` (alle sieben Stationen aus PLAN.md Abschnitt 1) und
+  `GuestFlow.cs` (Marketing/Gästestrom-Deckel), beide mit Unit-Tests in
+  `game/BalancingCore.Tests`. `Assets/Scripts/Game`: `Station.cs` (Zustand
+  einer Instanz, bekommt ihre `StationDefinition` vom Aufrufer statt sie
+  selbst zu halten), `GameManager.cs` (Tick-Loop über alle Stationen,
+  Manager-Gating -- ohne Manager produziert eine Station nicht automatisch,
+  nur per Klick, siehe PLAN.md Abschnitt 1 --, Gästestrom-Deckel, baut sein
+  UI weiterhin zur Laufzeit selbst -- kein Art-Pass vor Phase 4),
+  `SaveSystem.cs` (lokaler JSON-Save). `Assets/Editor/CIBuild.cs` baut Szene
+  und WebGL-Player programmatisch für CI (robuster als eine handgepflegte
+  `.unity`-Datei).
 - `apps/api` -- Fastify-Backend (Node/TS): Save-Endpunkte, serverautoritativer
   Offline-Progress, Auth über `@cgo/platform-auth`. Liefert unter `apps/api/public/webgl`
   zusätzlich den WebGL-Build aus (kein eigener "web"-Service nötig, nginx
@@ -68,6 +76,23 @@ Windows: `C:\ProgramData\Unity\Unity_lic.ulf`, Mac:
 Danach baut `ci.yml` bei jedem Push auf `main` automatisch WebGL, deployt es
 auf `cgo-app.de/restaurant/` -- kein weiterer manueller Schritt. Alles
 andere (Repo, Deploy-Key, Backend, Registrierung) ist bereits eingerichtet.
+
+### Bekannte offene Punkte
+
+- **WebGL-CI schlägt aktuell im `webgl-build`-Job ab** (Stand 2026-08-20):
+  `UnityConnectLoginRequest: Failed to login ... HTTP error code 401`, obwohl
+  `UNITY_LICENSE` (echtes, gültiges `.ulf`, per Hub-GUI-Login aktiviert),
+  `UNITY_EMAIL` und `UNITY_PASSWORD` (frisch bei id.unity.com gesetzt, kein
+  2FA) alle gesetzt sind. Noch nicht diagnostiziert: ob dasselbe
+  Zugangsdaten-Paar über Unity Hubs eigenen GUI-Login (nicht die alte
+  `core.cloud.unity3d.com/api/login`-API, die game-ci intern nutzt)
+  funktioniert -- das würde zeigen, ob es ein Account-Problem oder ein
+  API-spezifisches ist. Nächster Schritt bei Gelegenheit: diesen Vergleich
+  in einem frischen Codespace nachholen.
+- `client/` wurde nie in einem echten Unity-Editor geöffnet (nur als Dateien
+  geschrieben, ohne visuelle Prüfung) -- funktionierender Code nach bestem
+  Wissen, aber ungetestet im Editor. `game/BalancingCore` (die eigentliche
+  Spiellogik dahinter) ist vollständig unit-getestet (`dotnet test`).
 
 ## Entwicklung
 
