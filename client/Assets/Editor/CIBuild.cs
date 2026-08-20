@@ -36,6 +36,16 @@ namespace RestaurantIdle.Editor
             }
         }
 
+        /// <summary>
+        /// Fuer lokale Editor-Entwicklung: erzeugt/ueberschreibt die Szene manuell,
+        /// ohne einen vollen WebGL-Build anzustossen. CI braucht das nicht (baut
+        /// ueber BuildWebGl selbst), aber wer das Projekt frisch im Editor
+        /// oeffnet, findet sonst keine Assets/Scenes/Main.unity zum Bearbeiten/
+        /// Abspielen -- die entsteht bisher nur waehrend BuildWebGl.
+        /// </summary>
+        [MenuItem("RestaurantIdle/Szene fuer Editor erzeugen")]
+        public static void EnsureMainSceneMenuItem() => EnsureMainScene();
+
         private static void EnsureMainScene()
         {
             Directory.CreateDirectory("Assets/Scenes");
