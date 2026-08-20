@@ -44,9 +44,19 @@ namespace RestaurantIdle.Game
                 }
             }
 
+            Normalize(state);
+            return state;
+        }
+
+        /// <summary>
+        /// Fehlende Stationen auffuellen + Deadlock-Rettung -- gilt fuer jeden
+        /// Spielstand unabhaengig von der Quelle (lokal oder vom Backend
+        /// geladen), deshalb oeffentlich statt nur intern in LoadOrCreate.
+        /// </summary>
+        public static void Normalize(GameState state)
+        {
             EnsureStationSlots(state);
             RescueFromDeadlock(state);
-            return state;
         }
 
         /// <summary>Fuellt fehlende Stationen mit leeren Instanzen auf -- betrifft neue Spielstaende und alte, falls der Katalog waechst.</summary>

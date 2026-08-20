@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using BalancingCore;
 using BreakInfinity;
@@ -14,9 +15,12 @@ namespace RestaurantIdle.Game
     /// </summary>
     public class GameManager : MonoBehaviour
     {
+        private const float BackendSyncIntervalSeconds = 30f;
+
         private GameState state;
         private BigDouble revenue;
         private BigDouble lifetimeRevenue;
+        private float timeSinceLastSync;
 
         private Text headerLabel;
         private Button marketingButtonRef;
@@ -32,13 +36,50 @@ namespace RestaurantIdle.Game
 
         private void Start()
         {
-            state = SaveSystem.LoadOrCreate();
-            revenue = BigDouble.Parse(state.RevenueString);
-            lifetimeRevenue = BigDouble.Parse(state.LifetimeRevenueString);
+            StartCoroutine(InitializeGame());
+        }
 
-            ApplyOfflineEarnings();
+        /// <summary>
+        /// Backend zuerst versuchen (PLAN.md Abschnitt 5) -- nur wenn es dort
+        /// wirklich einen Spielstand gibt (Stations.Count > 0) wird er
+        /// massgeblich. Sonst lokalen Stand nehmen (neuer Account, oder
+        /// Backend gerade nicht erreichbar) und offline lokal berechnen --
+        /// ein bewusst schwaecherer, aber weiterhin funktionierender
+        /// Rueckfallpfad (siehe ApplyLocalOfflineEarnings).
+        /// </summary>
+        private IEnumerator InitializeGame()
+        {
+            BackendClient.LoadResult backendResult = null;
+            yield return BackendClient.Load(r => backendResult = r);
+
+            // Kein erweitertes Property-Pattern (State.Stations.Count: > 0) --
+            // das ist C# 10, Unity kompiliert dieses Projekt mit C# 9.0.
+            var hasBackendSave = backendResult != null && backendResult.Success
+                && backendResult.State != null && backendResult.State.Stations != null
+                && backendResult.State.Stations.Count > 0;
+
+            if (hasBackendSave)
+            {
+                state = backendResult.State;
+                SaveSystem.Normalize(state);
+                revenue = BigDouble.Parse(state.RevenueString);
+                lifetimeRevenue = BigDouble.Parse(backendResult.LifetimeRevenue);
+                ApplyOfflineEarnings(TimeSpan.FromSeconds(backendResult.OfflineSeconds));
+            }
+            else
+            {
+                state = SaveSystem.LoadOrCreate();
+                revenue = BigDouble.Parse(state.RevenueString);
+                lifetimeRevenue = BigDouble.Parse(state.LifetimeRevenueString);
+                ApplyLocalOfflineEarnings();
+            }
+
             BuildUi();
             RefreshUi();
+
+            // Deckt insbesondere den Umzug eines bisher rein lokalen
+            // Spielstands aufs Backend ab (erster Start nach dieser Aenderung).
+            Persist();
         }
 
         private BigDouble SumManagedYieldPerSecond()
@@ -58,15 +99,9 @@ namespace RestaurantIdle.Game
         private double CurrentCapacityFactor() =>
             GuestFlow.CapacityFactor(SumManagedYieldPerSecond(), GuestFlow.GuestFlowAt(state.MarketingLevel));
 
-        private void ApplyOfflineEarnings()
+        /// <summary>Serverautoritative Variante -- offlineDuration kommt vom Backend, nicht von der lokalen Systemuhr (PLAN.md Abschnitt 8).</summary>
+        private void ApplyOfflineEarnings(TimeSpan offlineDuration)
         {
-            if (state.LastSavedAtUnixSeconds == 0)
-            {
-                return;
-            }
-
-            var lastSeen = DateTimeOffset.FromUnixTimeSeconds(state.LastSavedAtUnixSeconds);
-            var offlineDuration = DateTimeOffset.UtcNow - lastSeen;
             if (offlineDuration <= TimeSpan.Zero)
             {
                 return;
@@ -80,6 +115,24 @@ namespace RestaurantIdle.Game
                 lifetimeRevenue += earned;
                 Debug.Log($"Offline-Ertrag ({offlineDuration.TotalMinutes:F0} Min.): {earned}");
             }
+        }
+
+        /// <summary>
+        /// Rueckfallpfad, nur wenn kein Backend-Save existiert oder das
+        /// Backend nicht erreichbar ist -- verlaesst sich auf die lokale
+        /// Systemuhr und ist deshalb bewusst schwaecher gegen Manipulation
+        /// als der Server-Pfad (PLAN.md Abschnitt 8), aber besser als gar
+        /// kein Offline-Ertrag.
+        /// </summary>
+        private void ApplyLocalOfflineEarnings()
+        {
+            if (state.LastSavedAtUnixSeconds == 0)
+            {
+                return;
+            }
+
+            var lastSeen = DateTimeOffset.FromUnixTimeSeconds(state.LastSavedAtUnixSeconds);
+            ApplyOfflineEarnings(DateTimeOffset.UtcNow - lastSeen);
         }
 
         private void Update()
@@ -99,9 +152,16 @@ namespace RestaurantIdle.Game
                 lifetimeRevenue += effective;
                 RefreshUi();
             }
+
+            timeSinceLastSync += Time.deltaTime;
+            if (timeSinceLastSync >= BackendSyncIntervalSeconds)
+            {
+                timeSinceLastSync = 0f;
+                Persist();
+            }
         }
 
-        private void OnApplicationQuit() => Persist();
+        private void OnApplicationQuit() => PersistLocal();
 
         private void OnApplicationPause(bool paused)
         {
@@ -111,7 +171,14 @@ namespace RestaurantIdle.Game
             }
         }
 
+        /// <summary>Lokal (sofort, synchron) UND ans Backend (asynchron) -- der lokale Save faengt einen fehlgeschlagenen/verzoegerten Sync auf.</summary>
         private void Persist()
+        {
+            PersistLocal();
+            StartCoroutine(BackendClient.Save(state, lifetimeRevenue.ToString(), "0"));
+        }
+
+        private void PersistLocal()
         {
             state.RevenueString = revenue.ToString();
             state.LifetimeRevenueString = lifetimeRevenue.ToString();
