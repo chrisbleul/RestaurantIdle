@@ -46,6 +46,24 @@ namespace RestaurantIdle.Editor
         [MenuItem("RestaurantIdle/Szene fuer Editor erzeugen")]
         public static void EnsureMainSceneMenuItem() => EnsureMainScene();
 
+        /// <summary>
+        /// Erzeugt die Szene automatisch beim Laden/Neukompilieren des Editors,
+        /// falls sie noch fehlt -- damit niemand den Menuepunkt von Hand
+        /// anklicken muss, nur weil das Projekt frisch ausgecheckt wurde.
+        /// Ueber delayCall verzoegert, weil ein Szenenwechsel waehrend der
+        /// Editor-Initialisierung selbst nicht sicher ist.
+        /// </summary>
+        [InitializeOnLoadMethod]
+        private static void AutoCreateSceneIfMissing()
+        {
+            if (File.Exists(ScenePath))
+            {
+                return;
+            }
+
+            EditorApplication.delayCall += EnsureMainScene;
+        }
+
         private static void EnsureMainScene()
         {
             Directory.CreateDirectory("Assets/Scenes");
