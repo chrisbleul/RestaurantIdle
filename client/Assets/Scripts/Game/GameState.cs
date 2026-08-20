@@ -13,6 +13,7 @@ namespace RestaurantIdle.Game
     {
         public string RevenueString = "0";
         public string LifetimeRevenueString = "0";
+        public string PrestigeStarsString = "0";
         public List<Station> Stations = new();
         public int MarketingLevel;
         public long LastSavedAtUnixSeconds;

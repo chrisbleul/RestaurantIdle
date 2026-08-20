@@ -33,6 +33,7 @@ namespace RestaurantIdle.Game
             public bool Success;
             public GameState State;
             public string LifetimeRevenue;
+            public string PrestigeStars;
             public double OfflineSeconds;
         }
 
@@ -66,6 +67,7 @@ namespace RestaurantIdle.Game
                 Success = true,
                 State = dto?.state ?? new GameState(),
                 LifetimeRevenue = string.IsNullOrEmpty(dto?.lifetimeRevenue) ? "0" : dto.lifetimeRevenue,
+                PrestigeStars = string.IsNullOrEmpty(dto?.prestigeStars) ? "0" : dto.prestigeStars,
                 OfflineSeconds = dto?.offlineSeconds ?? 0,
             });
         }

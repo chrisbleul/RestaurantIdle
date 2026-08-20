@@ -17,9 +17,14 @@ namespace RestaurantIdle.Game
     {
         private const float BackendSyncIntervalSeconds = 30f;
 
+        // Platzhalter -- PLAN.md Abschnitt 2: "k so waehlen, dass Reset nach
+        // ~1 Std. lohnt", muss im Playtest kalibriert werden (siehe Prestige.cs).
+        private const double PrestigeK = 1.0;
+
         private GameState state;
         private BigDouble revenue;
         private BigDouble lifetimeRevenue;
+        private BigDouble prestigeStars;
         private float timeSinceLastSync;
 
         // InitializeGame() laedt asynchron (Backend-Request ueber mehrere Frames)
@@ -30,6 +35,8 @@ namespace RestaurantIdle.Game
 
         private Text headerLabel;
         private Button marketingButtonRef;
+        private Text prestigeLabel;
+        private Button prestigeButtonRef;
         private readonly List<StationRow> rows = new();
 
         private struct StationRow
@@ -70,6 +77,7 @@ namespace RestaurantIdle.Game
                 SaveSystem.Normalize(state);
                 revenue = BigDouble.Parse(state.RevenueString);
                 lifetimeRevenue = BigDouble.Parse(backendResult.LifetimeRevenue);
+                prestigeStars = BigDouble.Parse(backendResult.PrestigeStars);
                 ApplyOfflineEarnings(TimeSpan.FromSeconds(backendResult.OfflineSeconds));
             }
             else
@@ -77,6 +85,7 @@ namespace RestaurantIdle.Game
                 state = SaveSystem.LoadOrCreate();
                 revenue = BigDouble.Parse(state.RevenueString);
                 lifetimeRevenue = BigDouble.Parse(state.LifetimeRevenueString);
+                prestigeStars = BigDouble.Parse(state.PrestigeStarsString);
                 ApplyLocalOfflineEarnings();
             }
 
@@ -194,13 +203,14 @@ namespace RestaurantIdle.Game
         private void Persist()
         {
             PersistLocal();
-            StartCoroutine(BackendClient.Save(state, lifetimeRevenue.ToString(), "0"));
+            StartCoroutine(BackendClient.Save(state, lifetimeRevenue.ToString(), prestigeStars.ToString()));
         }
 
         private void PersistLocal()
         {
             state.RevenueString = revenue.ToString();
             state.LifetimeRevenueString = lifetimeRevenue.ToString();
+            state.PrestigeStarsString = prestigeStars.ToString();
             SaveSystem.Save(state);
         }
 
@@ -257,6 +267,33 @@ namespace RestaurantIdle.Game
             RefreshUi();
         }
 
+        /// <summary>
+        /// Reset der laufenden Runde gegen Michelin-Sterne (PLAN.md Abschnitt
+        /// 1/2/7, Phase 6). Lifetime-Umsatz bleibt bewusst erhalten -- die
+        /// Sterne-Formel rechnet auf dem kumulierten Gesamtwert, nicht auf
+        /// einem pro-Run-Wert (siehe Prestige.StarsGainedFromReset).
+        /// </summary>
+        private void PrestigeReset()
+        {
+            var gain = Prestige.StarsGainedFromReset(lifetimeRevenue, PrestigeK, prestigeStars);
+            if (gain <= BigDouble.Zero)
+            {
+                return;
+            }
+
+            prestigeStars += gain;
+            revenue = BigDouble.Zero;
+            state.RevenueString = revenue.ToString();
+            state.MarketingLevel = 0;
+            state.Stations = new List<Station>();
+            // Gibt wie beim allerersten Start die erste Station gratis --
+            // sonst waere nach dem Reset buchstaeblich kein Kauf mehr moeglich.
+            SaveSystem.Normalize(state);
+
+            RefreshUi();
+            Persist();
+        }
+
         private void RefreshUi()
         {
             var guestFlow = GuestFlow.GuestFlowAt(state.MarketingLevel);
@@ -268,6 +305,10 @@ namespace RestaurantIdle.Game
                 + $"\nGaestestrom: {guestFlow}  (Auslastung: {factor:P0} von {potential}/s)"
                 + $"\nMarketing Stufe {state.MarketingLevel} -- naechste Stufe: {marketingCost}";
             marketingButtonRef.interactable = revenue >= marketingCost;
+
+            var prestigeGain = Prestige.StarsGainedFromReset(lifetimeRevenue, PrestigeK, prestigeStars);
+            prestigeLabel.text = $"Michelin-Sterne: {prestigeStars}\nReset bringt: +{prestigeGain}";
+            prestigeButtonRef.interactable = prestigeGain > BigDouble.Zero;
 
             for (var i = 0; i < rows.Count; i++)
             {
@@ -351,6 +392,8 @@ namespace RestaurantIdle.Game
 
             headerLabel = CreateLabel(contentGo.transform, preferredHeight: 130);
             marketingButtonRef = CreateButton(contentGo.transform, "Marketing kaufen", BuyMarketing, preferredHeight: 70);
+            prestigeLabel = CreateLabel(contentGo.transform, preferredHeight: 80);
+            prestigeButtonRef = CreateButton(contentGo.transform, "Neustart fuer Michelin-Sterne", PrestigeReset, preferredHeight: 70);
 
             for (var i = 0; i < StationCatalog.All.Count; i++)
             {
