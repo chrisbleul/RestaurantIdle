@@ -43,7 +43,29 @@ registerSaveRoutes(app, pool);
 // Build -- dann bleibt "/" schlicht unbeantwortet statt beim Start zu crashen.
 const webglDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../public/webgl');
 if (existsSync(webglDir)) {
-  await app.register(fastifyStatic, { root: webglDir });
+  await app.register(fastifyStatic, {
+    root: webglDir,
+    // Unitys WebGL-Build liefert .js/.wasm/.data bereits gzip-komprimiert als
+    // *.gz aus (Player Settings -> Compression Format: Gzip). Der Browser
+    // dekomprimiert das nur automatisch, wenn Content-Encoding gesetzt ist --
+    // ohne das versucht Unitys eigener Loader, die rohen komprimierten Bytes
+    // direkt als JS/Wasm zu parsen ("Unable to parse ... .gz!").
+    setHeaders: (res, filePath) => {
+      if (!filePath.endsWith('.gz')) {
+        return;
+      }
+
+      res.header('Content-Encoding', 'gzip');
+      const withoutGz = filePath.slice(0, -'.gz'.length);
+      if (withoutGz.endsWith('.js')) {
+        res.header('Content-Type', 'application/javascript');
+      } else if (withoutGz.endsWith('.wasm')) {
+        res.header('Content-Type', 'application/wasm');
+      } else if (withoutGz.endsWith('.data') || withoutGz.endsWith('.symbols.json')) {
+        res.header('Content-Type', 'application/octet-stream');
+      }
+    },
+  });
 } else {
   app.log.warn({ webglDir }, 'Kein WebGL-Build gefunden, "/" liefert 404');
 }
