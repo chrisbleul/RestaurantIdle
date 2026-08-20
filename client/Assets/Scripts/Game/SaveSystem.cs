@@ -1,6 +1,8 @@
 using System;
 using System.IO;
+using System.Linq;
 using BalancingCore;
+using BreakInfinity;
 using UnityEngine;
 
 namespace RestaurantIdle.Game
@@ -23,40 +25,27 @@ namespace RestaurantIdle.Game
 
         public static GameState LoadOrCreate()
         {
+            GameState state;
+
             if (!File.Exists(SavePath))
             {
-                return NewGame();
+                state = new GameState();
+            }
+            else
+            {
+                try
+                {
+                    state = JsonUtility.FromJson<GameState>(File.ReadAllText(SavePath)) ?? new GameState();
+                }
+                catch (Exception e)
+                {
+                    Debug.LogWarning($"Speicherstand beschaedigt, starte neu: {e.Message}");
+                    state = new GameState();
+                }
             }
 
-            try
-            {
-                var state = JsonUtility.FromJson<GameState>(File.ReadAllText(SavePath)) ?? NewGame();
-                EnsureStationSlots(state);
-                return state;
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning($"Speicherstand beschaedigt, starte neu: {e.Message}");
-                return NewGame();
-            }
-        }
-
-        private static GameState NewGame()
-        {
-            var state = new GameState();
             EnsureStationSlots(state);
-
-            // Ohne das gibt es fuer einen frischen Spielstand keinen Einstieg:
-            // Umsatz startet bei 0, aber jede Station kostet > 0 -- ohne eine
-            // kostenlose erste Station waere buchstaeblich kein Button jemals
-            // leistbar/klickbar. Die erste Station (Kaffeemaschine) startet
-            // deshalb bereits besessen, "Produzieren" (manuelles Antippen)
-            // liefert von da an den ersten Umsatz.
-            if (state.Stations.Count > 0)
-            {
-                state.Stations[0].OwnedCount = 1;
-            }
-
+            RescueFromDeadlock(state);
             return state;
         }
 
@@ -66,6 +55,24 @@ namespace RestaurantIdle.Game
             while (state.Stations.Count < StationCatalog.All.Count)
             {
                 state.Stations.Add(new Station());
+            }
+        }
+
+        /// <summary>
+        /// Ohne mindestens eine besessene Station bei Umsatz 0 ist buchstaeblich
+        /// kein Button jemals leistbar oder klickbar (jede Station kostet > 0,
+        /// "Produzieren" braucht OwnedCount > 0) -- weder fuer einen frischen
+        /// Spielstand noch fuer einen aelteren, der (z.B. wegen dieses selben
+        /// Fehlers in einer frueheren Version) in genau diesem Zustand
+        /// haengengeblieben ist. Deshalb hier statt nur in einem "neues Spiel"-
+        /// Pfad: greift bei jedem Laden, nicht nur bei einem leeren Speicherstand.
+        /// </summary>
+        private static void RescueFromDeadlock(GameState state)
+        {
+            var hasAnyStation = state.Stations.Any(s => s.OwnedCount > 0);
+            if (!hasAnyStation && BigDouble.Parse(state.RevenueString) <= BigDouble.Zero && state.Stations.Count > 0)
+            {
+                state.Stations[0].OwnedCount = 1;
             }
         }
     }
