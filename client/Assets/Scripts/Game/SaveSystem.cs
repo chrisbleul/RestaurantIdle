@@ -45,6 +45,18 @@ namespace RestaurantIdle.Game
         {
             var state = new GameState();
             EnsureStationSlots(state);
+
+            // Ohne das gibt es fuer einen frischen Spielstand keinen Einstieg:
+            // Umsatz startet bei 0, aber jede Station kostet > 0 -- ohne eine
+            // kostenlose erste Station waere buchstaeblich kein Button jemals
+            // leistbar/klickbar. Die erste Station (Kaffeemaschine) startet
+            // deshalb bereits besessen, "Produzieren" (manuelles Antippen)
+            // liefert von da an den ersten Umsatz.
+            if (state.Stations.Count > 0)
+            {
+                state.Stations[0].OwnedCount = 1;
+            }
+
             return state;
         }
 
