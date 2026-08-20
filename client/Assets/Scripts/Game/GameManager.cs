@@ -201,6 +201,14 @@ namespace RestaurantIdle.Game
         }
 
         // -- UI-Aufbau: grauer Prototyp, kein Art-Pass (PLAN.md Abschnitt 4/7). --
+        //
+        // Bewusst mit Auto-Layout (VerticalLayoutGroup + ScrollRect) statt
+        // manuell berechneten anchoredPosition-Werten: zwei vorherige Versuche
+        // mit Pixel-/Anker-Mathe waren im echten WebGL-Build (Handy-Bildschirm)
+        // sichtbar falsch, ohne dass sich das ohne Editor-Zugriff zuverlaessig
+        // vorhersagen liess. Layout-Groups berechnen Position und Groesse
+        // selbst zur Laufzeit aus der tatsaechlichen Bildschirmgroesse -- das
+        // eliminiert diese ganze Fehlerklasse, unabhaengig von der Aufloesung.
 
         private void BuildUi()
         {
@@ -208,33 +216,63 @@ namespace RestaurantIdle.Game
             var canvas = canvasObject.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
 
-            // Ohne das skaliert die UI nicht mit der tatsaechlichen Aufloesung
-            // (Unity-Default ist "Constant Pixel Size", 1 UI-Einheit = 1
-            // Bildschirmpixel) -- auf einem Handy-Canvas landet dann nur ein
-            // Ausschnitt der fuer 1080x1920 gedachten Positionen im Sichtfeld.
             var scaler = canvasObject.GetComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
             scaler.referenceResolution = new Vector2(1080, 1920);
             scaler.matchWidthOrHeight = 0.5f;
 
-            var eventSystemObject = new GameObject("EventSystem",
+            new GameObject("EventSystem",
                 typeof(UnityEngine.EventSystems.EventSystem),
                 typeof(UnityEngine.EventSystems.StandaloneInputModule));
-            eventSystemObject.transform.SetParent(null);
 
-            headerLabel = CreateLabel(canvasObject.transform, new Vector2(0, 480), 500, 140);
+            var scrollViewGo = new GameObject("ScrollView", typeof(Image), typeof(ScrollRect));
+            scrollViewGo.transform.SetParent(canvasObject.transform, false);
+            StretchToFillParent(scrollViewGo.GetComponent<RectTransform>());
+            scrollViewGo.GetComponent<Image>().color = new Color(0.93f, 0.93f, 0.93f);
 
-            var marketingButton = CreateButton(canvasObject.transform, "Marketing kaufen", new Vector2(0, 390), BuyMarketing);
-            marketingButtonRef = marketingButton;
+            var viewportGo = new GameObject("Viewport", typeof(RectMask2D));
+            viewportGo.transform.SetParent(scrollViewGo.transform, false);
+            var viewportRect = viewportGo.GetComponent<RectTransform>();
+            StretchToFillParent(viewportRect);
 
-            var y = 320f;
+            var contentGo = new GameObject("Content", typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            contentGo.transform.SetParent(viewportGo.transform, false);
+            var contentRect = contentGo.GetComponent<RectTransform>();
+            // Oben ausgerichtet und ueber die volle Breite -- Hoehe ergibt sich
+            // aus dem Inhalt (ContentSizeFitter), damit die Liste wachsen kann.
+            contentRect.anchorMin = new Vector2(0, 1);
+            contentRect.anchorMax = new Vector2(1, 1);
+            contentRect.pivot = new Vector2(0.5f, 1f);
+            contentRect.anchoredPosition = Vector2.zero;
+            contentRect.sizeDelta = Vector2.zero;
+
+            var layoutGroup = contentGo.GetComponent<VerticalLayoutGroup>();
+            layoutGroup.padding = new RectOffset(30, 30, 30, 30);
+            layoutGroup.spacing = 12;
+            layoutGroup.childForceExpandWidth = true;
+            layoutGroup.childForceExpandHeight = false;
+            layoutGroup.childControlWidth = true;
+            layoutGroup.childControlHeight = true;
+
+            var fitter = contentGo.GetComponent<ContentSizeFitter>();
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var scrollRect = scrollViewGo.GetComponent<ScrollRect>();
+            scrollRect.content = contentRect;
+            scrollRect.viewport = viewportRect;
+            scrollRect.horizontal = false;
+            scrollRect.vertical = true;
+
+            headerLabel = CreateLabel(contentGo.transform, preferredHeight: 130);
+            marketingButtonRef = CreateButton(contentGo.transform, "Marketing kaufen", BuyMarketing, preferredHeight: 70);
+
             for (var i = 0; i < StationCatalog.All.Count; i++)
             {
                 var index = i; // lokale Kopie fuer die Closures unten
-                var label = CreateLabel(canvasObject.transform, new Vector2(-150, y), 300, 70);
-                var buyButton = CreateButton(canvasObject.transform, "Kaufen", new Vector2(120, y + 15), () => BuyStation(index), width: 140, height: 30);
-                var produceButton = CreateButton(canvasObject.transform, "Produzieren", new Vector2(280, y + 15), () => ProduceNow(index), width: 140, height: 30);
-                var managerButton = CreateButton(canvasObject.transform, "Manager", new Vector2(120, y - 20), () => BuyManager(index), width: 140, height: 30);
+                var label = CreateLabel(contentGo.transform, preferredHeight: 80);
+                var buyButton = CreateButton(contentGo.transform, "Kaufen", () => BuyStation(index), preferredHeight: 60);
+                var produceButton = CreateButton(contentGo.transform, "Produzieren", () => ProduceNow(index), preferredHeight: 60);
+                var managerButton = CreateButton(contentGo.transform, "Manager", () => BuyManager(index), preferredHeight: 60);
 
                 rows.Add(new StationRow
                 {
@@ -243,46 +281,57 @@ namespace RestaurantIdle.Game
                     ProduceButton = produceButton,
                     ManagerButton = managerButton,
                 });
-
-                y -= 80f;
             }
         }
 
-        private static Text CreateLabel(Transform parent, Vector2 anchoredPosition, float width, float height)
+        private static void StretchToFillParent(RectTransform rect)
         {
-            var go = new GameObject("Label", typeof(Text));
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+        }
+
+        private static Text CreateLabel(Transform parent, float preferredHeight)
+        {
+            var go = new GameObject("Label", typeof(Text), typeof(LayoutElement));
             go.transform.SetParent(parent, false);
-            var rect = go.GetComponent<RectTransform>();
-            // Per Code erzeugte RectTransforms sind NICHT zentriert verankert
-            // (anders als ueber das Editor-Menue) -- ohne das hier landet jedes
-            // Element an einer unerwarteten Stelle relativ zur Ecke des Parents.
-            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(width, height);
-            rect.anchoredPosition = anchoredPosition;
 
             var text = go.GetComponent<Text>();
             text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            text.fontSize = 14;
+            text.fontSize = 28;
             text.alignment = TextAnchor.UpperLeft;
             text.color = Color.black;
+
+            var layoutElement = go.GetComponent<LayoutElement>();
+            layoutElement.preferredHeight = preferredHeight;
+            layoutElement.flexibleWidth = 1;
+
             return text;
         }
 
-        private static Button CreateButton(Transform parent, string label, Vector2 anchoredPosition, UnityEngine.Events.UnityAction onClick, float width = 260, float height = 60)
+        private static Button CreateButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick, float preferredHeight)
         {
-            var go = new GameObject(label, typeof(Image), typeof(Button));
+            var go = new GameObject(label, typeof(Image), typeof(Button), typeof(LayoutElement));
             go.transform.SetParent(parent, false);
-            var rect = go.GetComponent<RectTransform>();
-            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(width, height);
-            rect.anchoredPosition = anchoredPosition;
-            go.GetComponent<Image>().color = new Color(0.85f, 0.85f, 0.85f);
+            go.GetComponent<Image>().color = new Color(0.8f, 0.8f, 0.8f);
 
             var button = go.GetComponent<Button>();
             button.onClick.AddListener(onClick);
 
-            var labelText = CreateLabel(go.transform, Vector2.zero, width, height);
+            var layoutElement = go.GetComponent<LayoutElement>();
+            layoutElement.preferredHeight = preferredHeight;
+            layoutElement.flexibleWidth = 1;
+
+            var labelGo = new GameObject("Text", typeof(Text));
+            labelGo.transform.SetParent(go.transform, false);
+            StretchToFillParent(labelGo.GetComponent<RectTransform>());
+            var labelText = labelGo.GetComponent<Text>();
+            labelText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            labelText.fontSize = 28;
             labelText.alignment = TextAnchor.MiddleCenter;
+            labelText.color = Color.black;
             labelText.text = label;
 
             return button;
