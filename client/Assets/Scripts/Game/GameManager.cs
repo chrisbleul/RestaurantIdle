@@ -208,6 +208,15 @@ namespace RestaurantIdle.Game
             var canvas = canvasObject.GetComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
 
+            // Ohne das skaliert die UI nicht mit der tatsaechlichen Aufloesung
+            // (Unity-Default ist "Constant Pixel Size", 1 UI-Einheit = 1
+            // Bildschirmpixel) -- auf einem Handy-Canvas landet dann nur ein
+            // Ausschnitt der fuer 1080x1920 gedachten Positionen im Sichtfeld.
+            var scaler = canvasObject.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1080, 1920);
+            scaler.matchWidthOrHeight = 0.5f;
+
             var eventSystemObject = new GameObject("EventSystem",
                 typeof(UnityEngine.EventSystems.EventSystem),
                 typeof(UnityEngine.EventSystems.StandaloneInputModule));
@@ -244,6 +253,10 @@ namespace RestaurantIdle.Game
             var go = new GameObject("Label", typeof(Text));
             go.transform.SetParent(parent, false);
             var rect = go.GetComponent<RectTransform>();
+            // Per Code erzeugte RectTransforms sind NICHT zentriert verankert
+            // (anders als ueber das Editor-Menue) -- ohne das hier landet jedes
+            // Element an einer unerwarteten Stelle relativ zur Ecke des Parents.
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
             rect.sizeDelta = new Vector2(width, height);
             rect.anchoredPosition = anchoredPosition;
 
@@ -260,6 +273,7 @@ namespace RestaurantIdle.Game
             var go = new GameObject(label, typeof(Image), typeof(Button));
             go.transform.SetParent(parent, false);
             var rect = go.GetComponent<RectTransform>();
+            rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
             rect.sizeDelta = new Vector2(width, height);
             rect.anchoredPosition = anchoredPosition;
             go.GetComponent<Image>().color = new Color(0.85f, 0.85f, 0.85f);
