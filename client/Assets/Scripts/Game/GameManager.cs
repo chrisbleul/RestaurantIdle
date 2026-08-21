@@ -226,6 +226,7 @@ namespace RestaurantIdle.Game
             revenue += effective;
             lifetimeRevenue += effective;
             RefreshUi();
+            FlashHeader();
         }
 
         private void BuyStation(int i)
@@ -239,6 +240,7 @@ namespace RestaurantIdle.Game
             revenue -= cost;
             state.Stations[i].Buy();
             RefreshUi();
+            FlashHeader();
         }
 
         private void BuyManager(int i)
@@ -252,6 +254,7 @@ namespace RestaurantIdle.Game
             revenue -= def.ManagerCost;
             state.Stations[i].HasManager = true;
             RefreshUi();
+            FlashHeader();
         }
 
         private void BuyMarketing()
@@ -265,6 +268,7 @@ namespace RestaurantIdle.Game
             revenue -= cost;
             state.MarketingLevel++;
             RefreshUi();
+            FlashHeader();
         }
 
         /// <summary>
@@ -291,7 +295,52 @@ namespace RestaurantIdle.Game
             SaveSystem.Normalize(state);
 
             RefreshUi();
+            FlashHeader();
             Persist();
+        }
+
+        // Kurzer Goldton-Blitz auf dem Umsatz-Label bei jeder Aktion, die
+        // ihn tatsaechlich veraendert (PLAN.md Abschnitt 6: "jede
+        // hochzaehlende Zahl tweent"). Bewusst nur bei diesen diskreten
+        // Ereignissen statt bei jedem passiven Tick in Update() -- ein
+        // Blitz jeden Frame waere kein Feedback mehr, sondern nur Flackern.
+        private static readonly Color HeaderFlashColor = new Color(0.85f, 0.65f, 0.1f);
+        private Coroutine headerFlashRoutine;
+
+        private void FlashHeader()
+        {
+            if (headerFlashRoutine != null)
+            {
+                StopCoroutine(headerFlashRoutine);
+            }
+
+            headerFlashRoutine = StartCoroutine(FlashHeaderRoutine());
+        }
+
+        private IEnumerator FlashHeaderRoutine()
+        {
+            const float duration = 0.25f;
+            const float half = duration / 2f;
+            var original = headerLabel.color;
+
+            var elapsed = 0f;
+            while (elapsed < half)
+            {
+                elapsed += Time.deltaTime;
+                headerLabel.color = Color.Lerp(original, HeaderFlashColor, elapsed / half);
+                yield return null;
+            }
+
+            elapsed = 0f;
+            while (elapsed < half)
+            {
+                elapsed += Time.deltaTime;
+                headerLabel.color = Color.Lerp(HeaderFlashColor, original, elapsed / half);
+                yield return null;
+            }
+
+            headerLabel.color = original;
+            headerFlashRoutine = null;
         }
 
         private void RefreshUi()
@@ -442,12 +491,14 @@ namespace RestaurantIdle.Game
 
         private static Button CreateButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick, float preferredHeight)
         {
-            var go = new GameObject(label, typeof(Image), typeof(Button), typeof(LayoutElement));
+            var go = new GameObject(label, typeof(Image), typeof(Button), typeof(LayoutElement), typeof(ButtonPunch));
             go.transform.SetParent(parent, false);
             go.GetComponent<Image>().color = new Color(0.8f, 0.8f, 0.8f);
 
             var button = go.GetComponent<Button>();
+            var punch = go.GetComponent<ButtonPunch>();
             button.onClick.AddListener(onClick);
+            button.onClick.AddListener(punch.Punch);
 
             var layoutElement = go.GetComponent<LayoutElement>();
             layoutElement.preferredHeight = preferredHeight;
