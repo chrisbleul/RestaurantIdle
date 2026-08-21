@@ -1315,7 +1315,22 @@ namespace RestaurantIdle.Game
         {
             var go = new GameObject(label, typeof(Image), typeof(Button), typeof(LayoutElement), typeof(ButtonPunch));
             go.transform.SetParent(parent, false);
-            go.GetComponent<Image>().color = new Color(0.8f, 0.8f, 0.8f);
+
+            // PLANv3.md Phase E: Kenney UI Pack statt flacher Farbflaeche --
+            // 9-Slice (Image.Type.Sliced) haelt die runden Ecken/den Tiefen-
+            // Rand unverzerrt, egal wie breit der Button durch das Auto-
+            // Layout am Ende wird. Faellt die Sprite-Zuweisung aus
+            // irgendeinem Grund aus (Asset fehlt), bleibt die reine
+            // Farbflaeche als Fallback -- kein kaputter, unsichtbarer Button.
+            var buttonImage = go.GetComponent<Image>();
+            var buttonSprite = Resources.Load<Sprite>("UI/button-rectangle");
+            if (buttonSprite != null)
+            {
+                buttonImage.sprite = buttonSprite;
+                buttonImage.type = Image.Type.Sliced;
+            }
+
+            buttonImage.color = new Color(0.8f, 0.8f, 0.8f);
 
             var button = go.GetComponent<Button>();
             var punch = go.GetComponent<ButtonPunch>();

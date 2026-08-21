@@ -1,4 +1,5 @@
 using UnityEditor;
+using UnityEngine;
 
 namespace RestaurantIdle.Editor
 {
@@ -15,6 +16,18 @@ namespace RestaurantIdle.Editor
     public static class IconImportSetup
     {
         private const string ResourcesFolder = "Assets/Resources";
+
+        /// <summary>
+        /// PLANv3.md Phase E ("Kenney UI Pack einbinden, Buttons ... skinnen"):
+        /// Sprites unter Resources/UI/ sind 9-Slice-Buttons (Kenney UI Pack,
+        /// 192x64px), brauchen einen Border, sonst verzerren die runden Ecken
+        /// beim Strecken auf Button-Groesse. Werte per Augenmass am
+        /// Original-PNG abgelesen (abgerundete Ecke + Tiefen-Schatten unten),
+        /// keine Pixel-exakte Vermessung -- 9-Slice verzeiht kleine
+        /// Abweichungen.
+        /// </summary>
+        private const string UiSpriteFolder = "Assets/Resources/UI";
+        private static readonly Vector4 UiSpriteBorder = new Vector4(18, 24, 18, 18);
 
         [InitializeOnLoadMethod]
         private static void EnsureSpriteImportSettings()
@@ -45,6 +58,12 @@ namespace RestaurantIdle.Editor
                 importer.textureType = TextureImporterType.Sprite;
                 importer.spriteImportMode = SpriteImportMode.Single;
                 importer.alphaIsTransparency = true;
+
+                if (path.StartsWith(UiSpriteFolder))
+                {
+                    importer.spriteBorder = UiSpriteBorder;
+                }
+
                 importer.SaveAndReimport();
             }
         }
