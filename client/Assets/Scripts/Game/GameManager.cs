@@ -257,9 +257,8 @@ namespace RestaurantIdle.Game
         private const float GuestSpawnRateNumerator = 60f;
         private const float GuestSpawnMinInterval = 1.5f;
         private const float GuestSpawnMaxInterval = 8f;
-        private const float GuestWalkDurationSeconds = 6f;
-        private static readonly Vector3 GuestSpawnStart = new Vector3(-1.5f, 0.4f, -1.2f);
-        private static readonly Vector3 GuestSpawnEnd = new Vector3(7f, 0.4f, -1.2f);
+        private static readonly Vector3 GuestEntrance = new Vector3(-1.5f, 0.4f, -1.2f);
+        private static readonly Vector3 GuestExit = new Vector3(7f, 0.4f, -1.2f);
 
         private void UpdateGuestSpawner()
         {
@@ -278,8 +277,17 @@ namespace RestaurantIdle.Game
             SpawnGuest();
         }
 
-        private static void SpawnGuest()
+        /// <summary>
+        /// Ziel ist eine zufaellige *besessene* Station statt eines festen
+        /// Punkts (PLANv2.md Abschnitt 9: "Eingang -> Warteschlange -> Theke
+        /// -> Ausgang") -- damit haengt auch das Wegziel am echten
+        /// Spielfortschritt, nicht nur die Spawn-Rate. Ohne besessene
+        /// Station (ganz am Anfang) laeuft der Gast einfach quer durch.
+        /// </summary>
+        private void SpawnGuest()
         {
+            var stationPosition = PickOwnedStationPosition() ?? Vector3.Lerp(GuestEntrance, GuestExit, 0.5f);
+
             var guest = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             guest.name = "Guest";
             guest.transform.localScale = new Vector3(0.25f, 0.4f, 0.25f);
@@ -295,7 +303,27 @@ namespace RestaurantIdle.Game
             };
 
             var mover = guest.AddComponent<GuestMover>();
-            mover.Init(GuestSpawnStart, GuestSpawnEnd, GuestWalkDurationSeconds);
+            mover.Init(GuestEntrance, stationPosition, GuestExit);
+        }
+
+        private Vector3? PickOwnedStationPosition()
+        {
+            var ownedIndices = new List<int>();
+            for (var i = 0; i < state.Stations.Count; i++)
+            {
+                if (state.Stations[i].OwnedCount > 0 && stationWorldPositions.ContainsKey(i))
+                {
+                    ownedIndices.Add(i);
+                }
+            }
+
+            if (ownedIndices.Count == 0)
+            {
+                return null;
+            }
+
+            var chosen = ownedIndices[UnityEngine.Random.Range(0, ownedIndices.Count)];
+            return stationWorldPositions[chosen];
         }
 
         private void OnApplicationQuit()

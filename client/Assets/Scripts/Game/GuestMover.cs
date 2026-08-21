@@ -3,37 +3,77 @@ using UnityEngine;
 namespace RestaurantIdle.Game
 {
     /// <summary>
-    /// Bewegt einen gespawnten Gast linear von Start- zu Zielposition und
-    /// zerstoert sich danach selbst (PLANv2.md Abschnitt 9: Gast-Spawner).
-    /// Vereinfachter Ersatz fuer echte Wegfindung in dieser ersten
-    /// Phase-9-Iteration -- Eingang/Warteschlange/Theke/Ausgang als eigene
-    /// Zustaende folgen spaeter, sobald die Grundmechanik steht.
+    /// Bewegt einen Gast durch feste Wegpunkte: Eingang -> Station (mit
+    /// Wartepause) -> Ausgang (PLANv2.md Abschnitt 9: "Wegfindung Eingang ->
+    /// Warteschlange -> Theke -> Ausgang"). Kein echtes NavMesh/Pfadfinden --
+    /// eine statische, kleine Location braucht dafuer keine Graphensuche,
+    /// direkte Zielpunkte reichen.
     /// </summary>
     public class GuestMover : MonoBehaviour
     {
-        private Vector3 start;
-        private Vector3 end;
-        private float duration;
-        private float elapsed;
+        private const float MoveSpeed = 1.8f;
+        private const float WaitSecondsAtStation = 1.2f;
+        private const float ArrivalThreshold = 0.05f;
 
-        public void Init(Vector3 startPos, Vector3 endPos, float moveDuration)
+        private enum Phase
         {
-            start = startPos;
-            end = endPos;
-            duration = moveDuration;
-            transform.position = start;
+            WalkingToStation,
+            Waiting,
+            WalkingToExit,
+        }
+
+        private Vector3 stationPosition;
+        private Vector3 exitPosition;
+        private Phase phase;
+        private float waitTimer;
+
+        public void Init(Vector3 entrancePosition, Vector3 stationPos, Vector3 exitPos)
+        {
+            transform.position = entrancePosition;
+            stationPosition = stationPos;
+            exitPosition = exitPos;
+            phase = Phase.WalkingToStation;
         }
 
         private void Update()
         {
-            elapsed += Time.deltaTime;
-            var t = Mathf.Clamp01(elapsed / duration);
-            transform.position = Vector3.Lerp(start, end, t);
-
-            if (t >= 1f)
+            switch (phase)
             {
-                Destroy(gameObject);
+                case Phase.WalkingToStation:
+                    MoveToward(stationPosition);
+                    if (Reached(stationPosition))
+                    {
+                        phase = Phase.Waiting;
+                        waitTimer = WaitSecondsAtStation;
+                    }
+
+                    break;
+
+                case Phase.Waiting:
+                    waitTimer -= Time.deltaTime;
+                    if (waitTimer <= 0f)
+                    {
+                        phase = Phase.WalkingToExit;
+                    }
+
+                    break;
+
+                case Phase.WalkingToExit:
+                    MoveToward(exitPosition);
+                    if (Reached(exitPosition))
+                    {
+                        Destroy(gameObject);
+                    }
+
+                    break;
             }
         }
+
+        private void MoveToward(Vector3 target)
+        {
+            transform.position = Vector3.MoveTowards(transform.position, target, MoveSpeed * Time.deltaTime);
+        }
+
+        private bool Reached(Vector3 target) => Vector3.Distance(transform.position, target) < ArrivalThreshold;
     }
 }
