@@ -77,13 +77,13 @@ namespace RestaurantIdle.Editor
             cameraObject.tag = "MainCamera";
             var camera = cameraObject.GetComponent<Camera>();
             camera.orthographic = true;
-            camera.orthographicSize = 5f;
+            camera.orthographicSize = 4f;
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.62f, 0.82f, 0.92f);
             cameraObject.transform.rotation = Quaternion.Euler(30f, 45f, 0f);
             // Zielpunkt ungefaehr in der Mitte der Location-1-Objekte, nicht
             // Weltursprung -- die Theke selbst hat ihren Pivot in einer Ecke.
-            var lookTarget = new Vector3(4.5f, 0.4f, 0f);
+            var lookTarget = new Vector3(2.8f, 0.4f, 0f);
             cameraObject.transform.position = lookTarget + cameraObject.transform.rotation * new Vector3(0, 0, -15f);
 
             var lightObject = new GameObject("Directional Light", typeof(Light));
@@ -162,7 +162,7 @@ namespace RestaurantIdle.Editor
             for (var i = 0; i < remainingStations.Length; i++)
             {
                 var (model, stationName) = remainingStations[i];
-                var x = 2.5f + i * 1.4f;
+                var x = 1.6f + i * 0.85f;
                 InstantiateModel($"Assets/Models/Furniture/{model}", $"Station_{stationName}",
                     new Vector3(x, 0f, 0f), Quaternion.identity, FurnitureScale);
             }
