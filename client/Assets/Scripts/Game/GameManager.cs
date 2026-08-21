@@ -112,6 +112,10 @@ namespace RestaurantIdle.Game
         // InitializeGame() ueberhaupt fertig ist.
         private bool isInitialized;
 
+        /// <summary>Waehrend InitializeGame() gesammelter Offline-Ertrag, fuer den Willkommens-Dialog (ShowOfflineEarningsDialog) -- siehe ApplyOfflineEarnings.</summary>
+        private BigDouble pendingOfflineEarnings = BigDouble.Zero;
+        private double pendingOfflineMinutes;
+
         private Text headerLabel;
         private Button marketingButtonRef;
         private Image marketingButtonImage;
@@ -212,6 +216,11 @@ namespace RestaurantIdle.Game
 
             RefreshUi();
 
+            if (pendingOfflineEarnings > BigDouble.Zero)
+            {
+                ShowOfflineEarningsDialog(pendingOfflineEarnings, pendingOfflineMinutes);
+            }
+
             // Deckt insbesondere den Umzug eines bisher rein lokalen
             // Spielstands aufs Backend ab (erster Start nach dieser Aenderung).
             Persist();
@@ -268,6 +277,14 @@ namespace RestaurantIdle.Game
             {
                 revenue += earned;
                 lifetimeRevenue += earned;
+
+                // PLANv3.md Phase F ("Kein Offline-Dialog... der zentrale
+                // Moment beim Oeffnen"): der Ertrag wurde bisher nur
+                // geloggt, nie dem Spieler gezeigt -- gesammelt statt sofort
+                // angezeigt, weil BuildUi() (der Canvas, auf den der Dialog
+                // gehaengt wird) an dieser Stelle noch nicht existiert.
+                pendingOfflineEarnings += earned;
+                pendingOfflineMinutes += offlineDuration.TotalMinutes;
                 Debug.Log($"Offline-Ertrag ({offlineDuration.TotalMinutes:F0} Min.): {earned}");
             }
         }
@@ -1140,6 +1157,99 @@ namespace RestaurantIdle.Game
                 row.ManagerButton.interactable = revenue >= def.ManagerCost;
                 row.ManagerButtonImage.color = row.ManagerButton.interactable ? AffordableButtonColor : DefaultButtonColor;
             }
+        }
+
+        /// <summary>
+        /// PLANv3.md Phase F ("Kein Offline-Dialog... in jedem Genre-
+        /// Vertreter der zentrale Moment beim Oeffnen"): modales Overlay
+        /// ueber dem bereits gebauten Haupt-UI, nicht Teil des Scroll-
+        /// Inhalts -- eigener Backdrop + zentrierte Karte, schliesst sich
+        /// per Tap auf "Einsammeln" (das Geld selbst ist zu diesem Zeitpunkt
+        /// laengst gutgeschrieben, siehe ApplyOfflineEarnings -- der Dialog
+        /// ist die Bestaetigung, keine Gate-Mechanik).
+        /// </summary>
+        private void ShowOfflineEarningsDialog(BigDouble earned, double minutes)
+        {
+            var canvas = FindFirstObjectByType<Canvas>();
+            if (canvas == null)
+            {
+                return;
+            }
+
+            var backdrop = new GameObject("OfflineEarningsBackdrop", typeof(Image));
+            backdrop.transform.SetParent(canvas.transform, false);
+            StretchToFillParent(backdrop.GetComponent<RectTransform>());
+            backdrop.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.65f);
+
+            var panelGo = new GameObject("OfflineEarningsPanel", typeof(Image), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            panelGo.transform.SetParent(backdrop.transform, false);
+            var panelRect = panelGo.GetComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            panelRect.pivot = new Vector2(0.5f, 0.5f);
+            panelRect.sizeDelta = new Vector2(760, 0);
+
+            var panelImage = panelGo.GetComponent<Image>();
+            var panelSprite = Resources.Load<Sprite>("UI/panel-rectangle");
+            if (panelSprite != null)
+            {
+                panelImage.sprite = panelSprite;
+                panelImage.type = Image.Type.Sliced;
+            }
+
+            panelImage.color = Color.white;
+
+            var layout = panelGo.GetComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(40, 40, 40, 40);
+            layout.spacing = 16;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childAlignment = TextAnchor.MiddleCenter;
+
+            var fitter = panelGo.GetComponent<ContentSizeFitter>();
+            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var titleGo = new GameObject("Title", typeof(Text), typeof(LayoutElement));
+            titleGo.transform.SetParent(panelGo.transform, false);
+            var titleText = titleGo.GetComponent<Text>();
+            titleText.font = Resources.Load<Font>("Fonts/Fredoka");
+            titleText.fontSize = 34;
+            titleText.alignment = TextAnchor.MiddleCenter;
+            titleText.color = Color.black;
+            titleText.text = "Waehrend du weg warst...";
+            titleGo.GetComponent<LayoutElement>().preferredHeight = 56;
+
+            var amountGo = new GameObject("Amount", typeof(Text), typeof(LayoutElement));
+            amountGo.transform.SetParent(panelGo.transform, false);
+            var amountText = amountGo.GetComponent<Text>();
+            amountText.font = Resources.Load<Font>("Fonts/Fredoka");
+            amountText.fontSize = 46;
+            amountText.alignment = TextAnchor.MiddleCenter;
+            amountText.color = new Color(0.18f, 0.5f, 0.22f);
+            amountText.text = $"+{NumberFormat.Format(earned)}";
+            amountGo.GetComponent<LayoutElement>().preferredHeight = 66;
+
+            var subGo = new GameObject("Sub", typeof(Text), typeof(LayoutElement));
+            subGo.transform.SetParent(panelGo.transform, false);
+            var subText = subGo.GetComponent<Text>();
+            subText.font = Resources.Load<Font>("Fonts/Fredoka");
+            subText.fontSize = 22;
+            subText.alignment = TextAnchor.MiddleCenter;
+            subText.color = new Color(0.4f, 0.4f, 0.4f);
+            subText.text = $"{FormatOfflineDuration(minutes)} offline";
+            subGo.GetComponent<LayoutElement>().preferredHeight = 36;
+
+            var collectButton = CreateButton(panelGo.transform, "Einsammeln", () => Destroy(backdrop), preferredHeight: 72);
+            collectButton.GetComponent<Image>().color = AffordableButtonColor;
+
+            PlaySfx("sfx-milestone");
+        }
+
+        private static string FormatOfflineDuration(double minutes)
+        {
+            return minutes < 60 ? $"{minutes:F0} Minuten" : $"{minutes / 60.0:F1} Stunden";
         }
 
         // -- UI-Aufbau: grauer Prototyp, kein Art-Pass (PLAN.md Abschnitt 4/7). --
