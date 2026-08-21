@@ -439,6 +439,13 @@ namespace RestaurantIdle.Game
         private const float GuestSpawnRateNumerator = 60f;
         private const float GuestSpawnMinInterval = 1.5f;
         private const float GuestSpawnMaxInterval = 8f;
+
+        // Kenney-Sprite ist 96x128px bei 100 PPU (Unity-Default) = 0.96 x
+        // 1.28 Weltmasse nativ -- deutlich zu gross fuer diese Szene (siehe
+        // FurnitureScale in CIBuild.cs, gleiche Groessenordnung wie dort).
+        // 0.55 ergibt eine Sprite-Hoehe von ~0.7, aehnlich der vorherigen
+        // Kapsel (0.25/0.4/0.25 -> Hoehe 0.8).
+        private const float GuestSpriteScale = 0.55f;
         private static readonly Vector3 GuestEntrance = new Vector3(-1.5f, 0.4f, -1.2f);
         private static readonly Vector3 GuestExit = new Vector3(7f, 0.4f, -1.2f);
 
@@ -475,21 +482,24 @@ namespace RestaurantIdle.Game
         {
             var stationIndex = PickAvailableStationIndex();
 
-            var guest = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            guest.name = "Guest";
-            guest.transform.localScale = new Vector3(0.25f, 0.4f, 0.25f);
-            // Rein optisch -- ohne Collider koennten Gaeste sich zufaellig
-            // vor eine Station schieben und HandleStationTap's Raycast
-            // blockieren.
-            Destroy(guest.GetComponent<Collider>());
-
-            var renderer = guest.GetComponent<MeshRenderer>();
-            renderer.sharedMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
+            // PLANv3.md Abschnitt 5: Kenney-Toon-Character-Sprite statt
+            // eingefaerbter Kapsel. Kein Collider noetig -- anders als die
+            // Kapsel vorher blockiert ein SpriteRenderer ohne Collider von
+            // Natur aus keinen Raycast.
+            var guest = new GameObject("Guest", typeof(SpriteRenderer));
+            var spriteRenderer = guest.GetComponent<SpriteRenderer>();
+            spriteRenderer.sprite = Resources.Load<Sprite>("Characters/guest-idle");
+            guest.transform.localScale = Vector3.one * GuestSpriteScale;
+            if (Camera.main != null)
             {
-                color = Color.HSVToRGB(UnityEngine.Random.value, 0.6f, 0.9f),
-            };
+                // Billboard: Sprite-Ebene richtet sich einmalig nach der
+                // (fest stehenden) Kamera aus, kein Nachfuehren pro Frame
+                // noetig -- die Kamera bewegt sich nirgends im Spiel.
+                guest.transform.rotation = Camera.main.transform.rotation;
+            }
 
             var mover = guest.AddComponent<GuestMover>();
+            guest.AddComponent<GuestSpriteAnimator>();
 
             if (stationIndex.HasValue && stationWorldPositions.TryGetValue(stationIndex.Value, out var targetPosition))
             {
