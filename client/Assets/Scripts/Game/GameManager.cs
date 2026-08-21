@@ -41,6 +41,7 @@ namespace RestaurantIdle.Game
         private BigDouble lifetimeRevenue;
         private BigDouble prestigeStars;
         private float timeSinceLastSync;
+        private float guestSpawnTimer;
 
         // InitializeGame() laedt asynchron (Backend-Request ueber mehrere Frames)
         // -- Update() etc. laufen aber schon ab dem ersten Frame und wuerden ohne
@@ -175,6 +176,7 @@ namespace RestaurantIdle.Game
             }
 
             HandleStationTap();
+            UpdateGuestSpawner();
 
             var factor = CurrentCapacityFactor();
             var earnedThisFrame = BigDouble.Zero;
@@ -224,6 +226,55 @@ namespace RestaurantIdle.Game
             {
                 ProduceNow(hotspot.StationIndex);
             }
+        }
+
+        // PLANv2.md Abschnitt 9: "Gast-Spawn-Rate an den echten Wert
+        // koppeln, nicht als Deko animieren." GuestFlowAt() ist eine
+        // abstrakte Balancing-Groesse (Basis 10, waechst mit Marketing),
+        // keine woertliche "Gaeste pro Sekunde" -- 60/Wert mit Clamp bildet
+        // das auf eine optisch sinnvolle Spawn-Frequenz ab.
+        private const float GuestSpawnRateNumerator = 60f;
+        private const float GuestSpawnMinInterval = 1.5f;
+        private const float GuestSpawnMaxInterval = 8f;
+        private const float GuestWalkDurationSeconds = 6f;
+        private static readonly Vector3 GuestSpawnStart = new Vector3(-1.5f, 0.4f, -1.2f);
+        private static readonly Vector3 GuestSpawnEnd = new Vector3(7f, 0.4f, -1.2f);
+
+        private void UpdateGuestSpawner()
+        {
+            var guestFlow = GuestFlow.GuestFlowAt(state.MarketingLevel).ToDouble();
+            var interval = guestFlow > 0
+                ? Mathf.Clamp((float)(GuestSpawnRateNumerator / guestFlow), GuestSpawnMinInterval, GuestSpawnMaxInterval)
+                : GuestSpawnMaxInterval;
+
+            guestSpawnTimer += Time.deltaTime;
+            if (guestSpawnTimer < interval)
+            {
+                return;
+            }
+
+            guestSpawnTimer = 0f;
+            SpawnGuest();
+        }
+
+        private static void SpawnGuest()
+        {
+            var guest = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            guest.name = "Guest";
+            guest.transform.localScale = new Vector3(0.25f, 0.4f, 0.25f);
+            // Rein optisch -- ohne Collider koennten Gaeste sich zufaellig
+            // vor eine Station schieben und HandleStationTap's Raycast
+            // blockieren.
+            Destroy(guest.GetComponent<Collider>());
+
+            var renderer = guest.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
+            {
+                color = Color.HSVToRGB(UnityEngine.Random.value, 0.6f, 0.9f),
+            };
+
+            var mover = guest.AddComponent<GuestMover>();
+            mover.Init(GuestSpawnStart, GuestSpawnEnd, GuestWalkDurationSeconds);
         }
 
         private void OnApplicationQuit()
