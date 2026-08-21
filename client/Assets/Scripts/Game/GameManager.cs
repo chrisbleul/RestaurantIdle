@@ -5,6 +5,7 @@ using BalancingCore;
 using BreakInfinity;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 namespace RestaurantIdle.Game
@@ -165,8 +166,12 @@ namespace RestaurantIdle.Game
         /// ein bewusst schwaecherer, aber weiterhin funktionierender
         /// Rueckfallpfad (siehe ApplyLocalOfflineEarnings).
         /// </summary>
+        private const string MutedPrefKey = "RestaurantIdle.Muted";
+
         private IEnumerator InitializeGame()
         {
+            AudioListener.volume = PlayerPrefs.GetInt(MutedPrefKey, 0) == 1 ? 0f : 1f;
+
             BackendClient.LoadResult backendResult = null;
             yield return BackendClient.Load(r => backendResult = r);
 
@@ -1252,6 +1257,170 @@ namespace RestaurantIdle.Game
             return minutes < 60 ? $"{minutes:F0} Minuten" : $"{minutes / 60.0:F1} Stunden";
         }
 
+        /// <summary>
+        /// PLANv3.md Phase F ("Einstellungen: Ton, Mute, Save zuruecksetzen").
+        /// Gleiches Backdrop+Panel-Muster wie ShowOfflineEarningsDialog,
+        /// bewusst separat statt geteilter Hilfsmethode -- ein Refactor der
+        /// bereits verifizierten Offline-Dialog-Konstruktion haette dort ein
+        /// Regressionsrisiko ohne echten Mehrwert, drei Modal-Bloecke sind
+        /// hier billiger als das Risiko.
+        /// </summary>
+        private void OpenSettings()
+        {
+            var canvas = FindFirstObjectByType<Canvas>();
+            if (canvas == null)
+            {
+                return;
+            }
+
+            var backdrop = new GameObject("SettingsBackdrop", typeof(Image));
+            backdrop.transform.SetParent(canvas.transform, false);
+            StretchToFillParent(backdrop.GetComponent<RectTransform>());
+            backdrop.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.65f);
+
+            var panelGo = new GameObject("SettingsPanel", typeof(Image), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            panelGo.transform.SetParent(backdrop.transform, false);
+            var panelRect = panelGo.GetComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            panelRect.pivot = new Vector2(0.5f, 0.5f);
+            panelRect.sizeDelta = new Vector2(760, 0);
+
+            var panelImage = panelGo.GetComponent<Image>();
+            var panelSprite = Resources.Load<Sprite>("UI/panel-rectangle");
+            if (panelSprite != null)
+            {
+                panelImage.sprite = panelSprite;
+                panelImage.type = Image.Type.Sliced;
+            }
+
+            panelImage.color = Color.white;
+
+            var layout = panelGo.GetComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(40, 40, 40, 40);
+            layout.spacing = 16;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childAlignment = TextAnchor.MiddleCenter;
+
+            panelGo.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var titleGo = new GameObject("Title", typeof(Text), typeof(LayoutElement));
+            titleGo.transform.SetParent(panelGo.transform, false);
+            var titleText = titleGo.GetComponent<Text>();
+            titleText.font = Resources.Load<Font>("Fonts/Fredoka");
+            titleText.fontSize = 34;
+            titleText.alignment = TextAnchor.MiddleCenter;
+            titleText.color = Color.black;
+            titleText.text = "Einstellungen";
+            titleGo.GetComponent<LayoutElement>().preferredHeight = 56;
+
+            var muted = PlayerPrefs.GetInt(MutedPrefKey, 0) == 1;
+            var soundButton = CreateButton(panelGo.transform, muted ? "Ton: Aus" : "Ton: An", () => { }, preferredHeight: 70);
+            soundButton.GetComponent<Image>().color = AffordableButtonColor;
+            soundButton.onClick.AddListener(() =>
+            {
+                var nowMuted = PlayerPrefs.GetInt(MutedPrefKey, 0) == 1;
+                var willBeMuted = !nowMuted;
+                PlayerPrefs.SetInt(MutedPrefKey, willBeMuted ? 1 : 0);
+                AudioListener.volume = willBeMuted ? 0f : 1f;
+                soundButton.GetComponentInChildren<Text>().text = willBeMuted ? "Ton: Aus" : "Ton: An";
+            });
+
+            var resetButton = CreateButton(panelGo.transform, "Spielstand zuruecksetzen", () => { }, preferredHeight: 70);
+            resetButton.GetComponent<Image>().color = new Color(0.85f, 0.4f, 0.35f);
+            resetButton.onClick.AddListener(() =>
+                ShowConfirmDialog(
+                    "Spielstand zuruecksetzen?",
+                    "Das kann nicht rueckgaengig gemacht werden.",
+                    "Ja, loeschen",
+                    ResetSave));
+
+            CreateButton(panelGo.transform, "Schliessen", () => Destroy(backdrop), preferredHeight: 70);
+        }
+
+        /// <summary>Generisches Ja/Nein-Modal fuer destruktive Aktionen -- aktuell nur vom Reset-Button aus OpenSettings verwendet.</summary>
+        private void ShowConfirmDialog(string title, string message, string confirmLabel, UnityEngine.Events.UnityAction onConfirm)
+        {
+            var canvas = FindFirstObjectByType<Canvas>();
+            if (canvas == null)
+            {
+                return;
+            }
+
+            var backdrop = new GameObject("ConfirmBackdrop", typeof(Image));
+            backdrop.transform.SetParent(canvas.transform, false);
+            StretchToFillParent(backdrop.GetComponent<RectTransform>());
+            backdrop.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.8f);
+
+            var panelGo = new GameObject("ConfirmPanel", typeof(Image), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            panelGo.transform.SetParent(backdrop.transform, false);
+            var panelRect = panelGo.GetComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            panelRect.pivot = new Vector2(0.5f, 0.5f);
+            panelRect.sizeDelta = new Vector2(700, 0);
+
+            var panelImage = panelGo.GetComponent<Image>();
+            var panelSprite = Resources.Load<Sprite>("UI/panel-rectangle");
+            if (panelSprite != null)
+            {
+                panelImage.sprite = panelSprite;
+                panelImage.type = Image.Type.Sliced;
+            }
+
+            panelImage.color = Color.white;
+
+            var layout = panelGo.GetComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(40, 40, 40, 40);
+            layout.spacing = 16;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childAlignment = TextAnchor.MiddleCenter;
+
+            panelGo.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var titleGo = new GameObject("Title", typeof(Text), typeof(LayoutElement));
+            titleGo.transform.SetParent(panelGo.transform, false);
+            var titleText = titleGo.GetComponent<Text>();
+            titleText.font = Resources.Load<Font>("Fonts/Fredoka");
+            titleText.fontSize = 30;
+            titleText.alignment = TextAnchor.MiddleCenter;
+            titleText.color = Color.black;
+            titleText.text = title;
+            titleGo.GetComponent<LayoutElement>().preferredHeight = 50;
+
+            var messageGo = new GameObject("Message", typeof(Text), typeof(LayoutElement));
+            messageGo.transform.SetParent(panelGo.transform, false);
+            var messageText = messageGo.GetComponent<Text>();
+            messageText.font = Resources.Load<Font>("Fonts/Fredoka");
+            messageText.fontSize = 22;
+            messageText.alignment = TextAnchor.MiddleCenter;
+            messageText.color = new Color(0.4f, 0.4f, 0.4f);
+            messageText.text = message;
+            messageGo.GetComponent<LayoutElement>().preferredHeight = 40;
+
+            var confirmButton = CreateButton(panelGo.transform, confirmLabel, () =>
+            {
+                onConfirm();
+                Destroy(backdrop);
+            }, preferredHeight: 70);
+            confirmButton.GetComponent<Image>().color = new Color(0.85f, 0.4f, 0.35f);
+
+            CreateButton(panelGo.transform, "Abbrechen", () => Destroy(backdrop), preferredHeight: 70);
+        }
+
+        /// <summary>Loescht nur den lokalen Save (siehe SaveSystem.DeleteSaveFile) und laedt die Szene neu, damit InitializeGame() sauber mit einem frischen GameState startet.</summary>
+        private void ResetSave()
+        {
+            SaveSystem.DeleteSaveFile();
+            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+        }
+
         // -- UI-Aufbau: grauer Prototyp, kein Art-Pass (PLAN.md Abschnitt 4/7). --
         //
         // Bewusst mit Auto-Layout (VerticalLayoutGroup + ScrollRect) statt
@@ -1328,6 +1497,8 @@ namespace RestaurantIdle.Game
             // die fuenfte Zeile (Naechstes Ziel, PLANv3 Phase D) braucht
             // noch mal Platz dazu.
             headerLabel = CreateLabel(contentGo.transform, preferredHeight: 205);
+            var settingsButton = CreateButton(contentGo.transform, "Einstellungen", OpenSettings, preferredHeight: 56);
+            settingsButton.GetComponent<Image>().color = DefaultButtonColor;
             marketingButtonRef = CreateButton(contentGo.transform, "Marketing kaufen", BuyMarketing, preferredHeight: 70);
             marketingButtonImage = marketingButtonRef.GetComponent<Image>();
             prestigeLabel = CreateLabel(contentGo.transform, preferredHeight: 80);

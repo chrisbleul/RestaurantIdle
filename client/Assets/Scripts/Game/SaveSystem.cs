@@ -33,6 +33,22 @@ namespace RestaurantIdle.Game
             File.WriteAllText(SavePath, JsonUtility.ToJson(state, prettyPrint: true));
         }
 
+        /// <summary>
+        /// PLANv3.md Phase F ("Einstellungen: ... Save zuruecksetzen"). Loescht
+        /// nur den lokalen Stand -- ein per Backend geladener Spielstand (siehe
+        /// GameManager.InitializeGame, Backend hat Vorrang wenn erreichbar)
+        /// braucht dafuer eigentlich einen eigenen Loesch-Endpunkt; ausserhalb
+        /// des Scopes hier, das Backend ist in der aktuellen Dev-Umgebung
+        /// ohnehin nie erreichbar.
+        /// </summary>
+        public static void DeleteSaveFile()
+        {
+            if (File.Exists(SavePath))
+            {
+                File.Delete(SavePath);
+            }
+        }
+
         public static GameState LoadOrCreate()
         {
             GameState state;
