@@ -15,6 +15,15 @@ namespace RestaurantIdle.Game
     /// </summary>
     public static class SaveSystem
     {
+        /// <summary>
+        /// PLANv3.md Abschnitt 3/6 Phase A: muss vor jeder Strukturaenderung
+        /// an GameState/Station stehen (siehe K1-Umbau in Phase B), sonst
+        /// brechen bestehende Spielstaende stillschweigend. 1 = aktuelle
+        /// Struktur (dieser Commit). 0 bedeutet: Save stammt von vor der
+        /// Einfuehrung von SchemaVersion.
+        /// </summary>
+        public const int CurrentSchemaVersion = 1;
+
         private static string SavePath => Path.Combine(Application.persistentDataPath, "save.json");
 
         public static void Save(GameState state)
@@ -55,8 +64,25 @@ namespace RestaurantIdle.Game
         /// </summary>
         public static void Normalize(GameState state)
         {
+            Migrate(state);
             EnsureStationSlots(state);
             RescueFromDeadlock(state);
+        }
+
+        /// <summary>
+        /// Hebt einen Spielstand schrittweise auf CurrentSchemaVersion.
+        /// Jede Stufe ist ein eigener if-Block, damit ein Save aus jeder
+        /// Vergangenheit ueber alle dazwischenliegenden Versionen laeuft,
+        /// nicht nur von der unmittelbar vorherigen.
+        /// </summary>
+        public static void Migrate(GameState state)
+        {
+            if (state.SchemaVersion < 1)
+            {
+                // Reines Stempeln -- SchemaVersion existierte vorher nicht,
+                // die Struktur davor entspricht bereits Version 1.
+                state.SchemaVersion = 1;
+            }
         }
 
         /// <summary>Fuellt fehlende Stationen mit leeren Instanzen auf -- betrifft neue Spielstaende und alte, falls der Katalog waechst.</summary>

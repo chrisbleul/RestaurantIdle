@@ -11,6 +11,17 @@ namespace RestaurantIdle.Game
     [Serializable]
     public class GameState
     {
+        /// <summary>
+        /// PLANv3.md Abschnitt 3 (K3-Befund): ohne Versionsfeld bricht jede
+        /// spaetere Strukturaenderung an Station (z.B. der K1-Umbau von
+        /// OwnedCount auf PriceLevel/EquipmentLevel) bestehende Spielstaende
+        /// stillschweigend. JsonUtility setzt fehlende Felder in alten
+        /// Saves automatisch auf 0 (C#-Default) -- das ist deshalb bewusst
+        /// die "unversioniert/Legacy"-Markierung, nicht 1. Migration siehe
+        /// SaveSystem.Migrate().
+        /// </summary>
+        public int SchemaVersion = SaveSystem.CurrentSchemaVersion;
+
         public string RevenueString = "0";
         public string LifetimeRevenueString = "0";
         public string PrestigeStarsString = "0";

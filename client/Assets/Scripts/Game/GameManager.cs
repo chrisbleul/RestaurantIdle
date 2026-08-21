@@ -22,6 +22,12 @@ namespace RestaurantIdle.Game
         // ~1 Std. lohnt", muss im Playtest kalibriert werden (siehe Prestige.cs).
         private const double PrestigeK = 1.0;
 
+        // PLANv3.md K3: Renovierungspunkte wurden berechnet/angezeigt, aber
+        // nirgends als Multiplikator verwendet -- ein Reset war reiner
+        // Verlust. 2%/Punkt ist ein Platzhalter (wie PrestigeK), muss im
+        // Playtest kalibriert werden.
+        private const double PrestigeMultiplierPerStar = 0.02;
+
         // Icons aus dem Kenney Food Kit (CC0, Assets/Resources/Icons/) --
         // Reihenfolge muss zu StationCatalog.All passen (Kaffeemaschine,
         // Fritteuse, Grill, Pizzaofen, Sushi-Bar, Patisserie, Chef's Table).
@@ -42,6 +48,16 @@ namespace RestaurantIdle.Game
         private BigDouble prestigeStars;
         private float timeSinceLastSync;
         private float guestSpawnTimer;
+
+        /// <summary>
+        /// PLANv3.md A5: RefreshUi() jeden Frame aus dem passiven Tick-Pfad
+        /// aufzurufen erzeugt auf Mobile/WebGL unnoetigen GC-Druck (Text.text-
+        /// Zuweisung alloziert). 10Hz reicht fuer eine Zahl, die sich nur
+        /// kontinuierlich hochzaehlt -- diskrete Nutzeraktionen (Kauf, Tap,
+        /// Renovieren) rufen RefreshUi() weiterhin direkt und sofort auf.
+        /// </summary>
+        private const float UiRefreshIntervalSeconds = 0.1f;
+        private float uiRefreshTimer;
         // Weltposition pro Station, fuer den Muenz-Burst bei UI-Button-Klicks
         // (dort gibt es keinen Raycast-Treffpunkt wie beim 3D-Tap). Einmalig
         // aus den StationHotspot-Objekten in der Szene aufgebaut.
@@ -150,6 +166,14 @@ namespace RestaurantIdle.Game
         private double CurrentCapacityFactor() =>
             GuestFlow.CapacityFactor(SumManagedYieldPerSecond(), GuestFlow.GuestFlowAt(state.MarketingLevel));
 
+        /// <summary>
+        /// PLANv3.md K3-Fix: globaler Ertragsmultiplikator aus den
+        /// Renovierungspunkten -- macht "Renovieren" zum ersten Mal zu
+        /// einem echten Gewinn statt nur einem Reset mit wirkungsloser
+        /// Anzeigezahl.
+        /// </summary>
+        private double PrestigeMultiplier() => 1.0 + prestigeStars.ToDouble() * PrestigeMultiplierPerStar;
+
         /// <summary>Serverautoritative Variante -- offlineDuration kommt vom Backend, nicht von der lokalen Systemuhr (PLAN.md Abschnitt 8).</summary>
         private void ApplyOfflineEarnings(TimeSpan offlineDuration)
         {
@@ -158,7 +182,7 @@ namespace RestaurantIdle.Game
                 return;
             }
 
-            var effectivePerSecond = SumManagedYieldPerSecond() * CurrentCapacityFactor();
+            var effectivePerSecond = SumManagedYieldPerSecond() * CurrentCapacityFactor() * PrestigeMultiplier();
             var earned = OfflineEarnings.Calculate(effectivePerSecond, offlineDuration);
             if (earned > BigDouble.Zero)
             {
@@ -206,9 +230,15 @@ namespace RestaurantIdle.Game
 
             if (earnedThisFrame > BigDouble.Zero)
             {
-                var effective = earnedThisFrame * factor;
+                var effective = earnedThisFrame * factor * PrestigeMultiplier();
                 revenue += effective;
                 lifetimeRevenue += effective;
+            }
+
+            uiRefreshTimer += Time.deltaTime;
+            if (uiRefreshTimer >= UiRefreshIntervalSeconds)
+            {
+                uiRefreshTimer = 0f;
                 RefreshUi();
             }
 
@@ -230,19 +260,40 @@ namespace RestaurantIdle.Game
         /// (untere Bildschirmhaelfte) nicht zusaetzlich einen 3D-Raycast
         /// auf die Szene ausloesen.
         /// </summary>
+        /// <summary>
+        /// PLANv3.md K3-Nachbarbefund: IsPointerOverGameObject() ohne
+        /// fingerId liefert auf Touch-Geraeten den (nicht vorhandenen)
+        /// Maus-Status -- auf echten Geraeten (iOS) schlagen UI-Taps dann
+        /// zusaetzlich als 3D-Raycast durch die Szene durch. Touch- und
+        /// Maus-Pfad deshalb strikt getrennt statt Input.mousePosition auf
+        /// Touch-Geraeten "mitlaufen" zu lassen.
+        /// </summary>
         private void HandleStationTap()
         {
-            if (!Input.GetMouseButtonDown(0) || EventSystem.current.IsPointerOverGameObject())
+            bool tapped;
+            bool overUi;
+            Vector2 screenPosition;
+
+            if (Input.touchCount > 0)
+            {
+                var touch = Input.GetTouch(0);
+                tapped = touch.phase == TouchPhase.Began;
+                screenPosition = touch.position;
+                overUi = EventSystem.current.IsPointerOverGameObject(touch.fingerId);
+            }
+            else
+            {
+                tapped = Input.GetMouseButtonDown(0);
+                screenPosition = Input.mousePosition;
+                overUi = EventSystem.current.IsPointerOverGameObject();
+            }
+
+            if (!tapped || overUi || Camera.main == null)
             {
                 return;
             }
 
-            if (Camera.main == null)
-            {
-                return;
-            }
-
-            var ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            var ray = Camera.main.ScreenPointToRay(screenPosition);
             if (Physics.Raycast(ray, out var hit) && hit.collider.TryGetComponent<StationHotspot>(out var hotspot))
             {
                 ProduceNow(hotspot.StationIndex, hit.point);
@@ -378,7 +429,7 @@ namespace RestaurantIdle.Game
                 return;
             }
 
-            var effective = earned * CurrentCapacityFactor();
+            var effective = earned * CurrentCapacityFactor() * PrestigeMultiplier();
             revenue += effective;
             lifetimeRevenue += effective;
             RefreshUi();
@@ -604,7 +655,8 @@ namespace RestaurantIdle.Game
             marketingButtonRef.interactable = revenue >= marketingCost;
 
             var prestigeGain = Prestige.StarsGainedFromReset(lifetimeRevenue, PrestigeK, prestigeStars);
-            prestigeLabel.text = $"Renovierungspunkte: {NumberFormat.Format(prestigeStars)}\nNaechste Renovierung bringt: +{NumberFormat.Format(prestigeGain)}";
+            prestigeLabel.text = $"Renovierungspunkte: {NumberFormat.Format(prestigeStars)} (x{PrestigeMultiplier():F2} Ertrag)"
+                + $"\nNaechste Renovierung bringt: +{NumberFormat.Format(prestigeGain)}";
             prestigeButtonRef.interactable = prestigeGain > BigDouble.Zero;
 
             for (var i = 0; i < rows.Count; i++)
