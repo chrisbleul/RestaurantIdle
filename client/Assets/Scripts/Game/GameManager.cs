@@ -63,7 +63,6 @@ namespace RestaurantIdle.Game
         {
             public Text Label;
             public Button BuyButton;
-            public Button ProduceButton;
             public Button ManagerButton;
         }
 
@@ -214,36 +213,28 @@ namespace RestaurantIdle.Game
 
         /// <summary>
         /// Tap-Layer (PLANv2.md Abschnitt 1.3): Klick auf eine Station in der
-        /// 3D-Szene loest denselben ProduceNow-Effekt aus wie der
-        /// "Produzieren"-Button in der Liste. EventSystem-Check zuerst,
-        /// damit Klicks auf die UI (untere Bildschirmhaelfte) nicht
-        /// zusaetzlich einen 3D-Raycast auf die Szene ausloesen.
+        /// 3D-Szene loest ProduceNow aus -- der einzige Weg, manuell zu
+        /// produzieren (der separate "Produzieren"-Listenbutton wurde
+        /// entfernt, sobald der Tap-Layer stand: redundant, "Kaufen" und
+        /// "Manager" bleiben als Listenbuttons, dafuer gibt es keine
+        /// Tap-Geste). EventSystem-Check zuerst, damit Klicks auf die UI
+        /// (untere Bildschirmhaelfte) nicht zusaetzlich einen 3D-Raycast
+        /// auf die Szene ausloesen.
         /// </summary>
         private void HandleStationTap()
         {
-            if (!Input.GetMouseButtonDown(0))
-            {
-                return;
-            }
-
-            Debug.Log($"[Tap] mouseDown bei {Input.mousePosition}, overUI={EventSystem.current.IsPointerOverGameObject()}");
-
-            if (EventSystem.current.IsPointerOverGameObject())
+            if (!Input.GetMouseButtonDown(0) || EventSystem.current.IsPointerOverGameObject())
             {
                 return;
             }
 
             if (Camera.main == null)
             {
-                Debug.Log("[Tap] Camera.main ist null");
                 return;
             }
 
             var ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            var didHit = Physics.Raycast(ray, out var hit);
-            Debug.Log($"[Tap] Raycast didHit={didHit} collider={(didHit ? hit.collider.name : "-")}");
-
-            if (didHit && hit.collider.TryGetComponent<StationHotspot>(out var hotspot))
+            if (Physics.Raycast(ray, out var hit) && hit.collider.TryGetComponent<StationHotspot>(out var hotspot))
             {
                 ProduceNow(hotspot.StationIndex, hit.point);
             }
@@ -513,7 +504,6 @@ namespace RestaurantIdle.Game
                     + (station.HasManager ? "\nManager: aktiv" : $"\nManager: {def.ManagerCost}");
 
                 row.BuyButton.interactable = revenue >= station.NextCost(def);
-                row.ProduceButton.interactable = station.OwnedCount > 0;
                 row.ManagerButton.gameObject.SetActive(!station.HasManager);
                 row.ManagerButton.interactable = revenue >= def.ManagerCost;
             }
@@ -601,14 +591,12 @@ namespace RestaurantIdle.Game
                 var icon = Resources.Load<Sprite>($"Icons/{StationIconNames[index]}");
                 var label = CreateStationHeader(contentGo.transform, icon, preferredHeight: 80);
                 var buyButton = CreateButton(contentGo.transform, "Kaufen", () => BuyStation(index), preferredHeight: 60);
-                var produceButton = CreateButton(contentGo.transform, "Produzieren", () => ProduceNow(index), preferredHeight: 60);
                 var managerButton = CreateButton(contentGo.transform, "Manager", () => BuyManager(index), preferredHeight: 60);
 
                 rows.Add(new StationRow
                 {
                     Label = label,
                     BuyButton = buyButton,
-                    ProduceButton = produceButton,
                     ManagerButton = managerButton,
                 });
             }
