@@ -7,14 +7,28 @@ namespace BalancingCore
     /// Statische Konfiguration einer Station-Art (Plan Abschnitt 1). Klassischer
     /// struct statt "record struct" -- Unitys Standard-C#-Sprachversion (9.0)
     /// kennt record structs noch nicht, siehe "Unity-CI einrichten" in README.md.
+    ///
+    /// PLANv3.md K1-Umbau: zwei unabhaengige Upgrade-Achsen statt Stueckzahl
+    /// (Preis -> Ertrag/Verkauf, Ausstattung -> Zyklusgeschwindigkeit). Die
+    /// abgeleiteten Achsen-Felder (PriceUpgrade*/EquipmentUpgrade*/*GrowthPer*)
+    /// werden bewusst aus den bestehenden sechs Katalogwerten berechnet statt
+    /// pro Station 4 weitere frei erfundene Zahlen einzufuehren -- die
+    /// Ausgangswerte sind ohnehin nur Platzhalter (siehe Klassenkommentar
+    /// unten), echte Kalibrierung ist erst mit Playtestdaten sinnvoll
+    /// (PLANv3 Phase H).
     /// </summary>
     public readonly struct StationDefinition
     {
         public readonly string Name;
         public readonly double CycleSeconds;
+        public readonly double MinCycleSeconds;
         public readonly BigDouble BaseYield;
         public readonly BigDouble BaseCost;
         public readonly double CostGrowthRate;
+        public readonly BigDouble PriceUpgradeBaseCost;
+        public readonly BigDouble EquipmentUpgradeBaseCost;
+        public readonly double YieldGrowthPerPriceLevel;
+        public readonly double SpeedGrowthPerEquipmentLevel;
         public readonly BigDouble ManagerCost;
 
         public StationDefinition(
@@ -31,6 +45,12 @@ namespace BalancingCore
             BaseCost = baseCost;
             CostGrowthRate = costGrowthRate;
             ManagerCost = managerCost;
+
+            MinCycleSeconds = cycleSeconds * 0.2;
+            PriceUpgradeBaseCost = baseCost * 0.5;
+            EquipmentUpgradeBaseCost = baseCost * 0.5;
+            YieldGrowthPerPriceLevel = 1.12;
+            SpeedGrowthPerEquipmentLevel = 0.94;
         }
     }
 

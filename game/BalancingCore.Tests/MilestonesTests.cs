@@ -8,18 +8,16 @@ public class MilestonesTests
 {
     [Theory]
     [InlineData(0, 1)]
-    [InlineData(24, 1)]
-    [InlineData(25, 2)]
-    [InlineData(49, 2)]
-    [InlineData(50, 4)]
-    [InlineData(99, 4)]
-    [InlineData(100, 8)]
-    [InlineData(199, 8)]
-    [InlineData(200, 16)]
-    [InlineData(1000, 16)]
-    public void Multiplier_StacksAtEachDefaultThreshold(int owned, double expected)
+    [InlineData(9, 1)]
+    [InlineData(10, 2)]
+    [InlineData(24, 2)]
+    [InlineData(25, 4)]
+    [InlineData(49, 4)]
+    [InlineData(50, 8)]
+    [InlineData(1000, 8)]
+    public void Multiplier_StacksAtEachDefaultThreshold(int level, double expected)
     {
-        var multiplier = Milestones.Multiplier(owned);
+        var multiplier = Milestones.Multiplier(level);
         Assert.Equal((BigDouble)expected, multiplier);
     }
 
@@ -31,18 +29,18 @@ public class MilestonesTests
     }
 
     [Theory]
-    [InlineData(0, 25)]
-    [InlineData(24, 25)]
-    [InlineData(25, 50)]
-    [InlineData(199, 200)]
-    public void NextThreshold_ReturnsFirstUnreached(int owned, int expected)
+    [InlineData(0, 10)]
+    [InlineData(9, 10)]
+    [InlineData(10, 25)]
+    [InlineData(49, 50)]
+    public void NextThreshold_ReturnsFirstUnreached(int level, int expected)
     {
-        Assert.Equal(expected, Milestones.NextThreshold(owned));
+        Assert.Equal(expected, Milestones.NextThreshold(level));
     }
 
     [Fact]
     public void NextThreshold_AllReached_ReturnsNull()
     {
-        Assert.Null(Milestones.NextThreshold(200));
+        Assert.Null(Milestones.NextThreshold(50));
     }
 }

@@ -79,6 +79,9 @@ namespace RestaurantIdle.Game
         {
             public Text Label;
             public Button BuyButton;
+            public Text BuyButtonLabel;
+            public Button EquipButton;
+            public Text EquipButtonLabel;
             public Button ManagerButton;
         }
 
@@ -362,7 +365,7 @@ namespace RestaurantIdle.Game
             var ownedIndices = new List<int>();
             for (var i = 0; i < state.Stations.Count; i++)
             {
-                if (state.Stations[i].OwnedCount > 0 && stationWorldPositions.ContainsKey(i))
+                if (state.Stations[i].IsUnlocked && stationWorldPositions.ContainsKey(i))
                 {
                     ownedIndices.Add(i);
                 }
@@ -443,16 +446,54 @@ namespace RestaurantIdle.Game
             }
         }
 
+        /// <summary>
+        /// PLANv3.md K1: eine Station wird einmal freigeschaltet (Unlock),
+        /// danach kauft dieser Button die Preis-Achse hoch (mehr Ertrag/
+        /// Verkauf). Die Ausstattungs-Achse (Zyklusgeschwindigkeit) hat einen
+        /// eigenen Button, siehe UpgradeEquipment.
+        /// </summary>
         private void BuyStation(int i)
         {
-            var cost = state.Stations[i].NextCost(StationCatalog.All[i]);
+            var station = state.Stations[i];
+            var def = StationCatalog.All[i];
+            var cost = station.IsUnlocked ? station.NextPriceUpgradeCost(def) : station.UnlockCost(def);
             if (revenue < cost)
             {
                 return;
             }
 
             revenue -= cost;
-            state.Stations[i].Buy();
+            if (station.IsUnlocked)
+            {
+                station.UpgradePrice();
+            }
+            else
+            {
+                station.Unlock();
+            }
+
+            RefreshUi();
+            FlashHeader();
+            PlaySfx("sfx-purchase");
+        }
+
+        private void UpgradeEquipment(int i)
+        {
+            var station = state.Stations[i];
+            var def = StationCatalog.All[i];
+            if (!station.IsUnlocked)
+            {
+                return;
+            }
+
+            var cost = station.NextEquipmentUpgradeCost(def);
+            if (revenue < cost)
+            {
+                return;
+            }
+
+            revenue -= cost;
+            station.UpgradeEquipment();
             RefreshUi();
             FlashHeader();
             PlaySfx("sfx-purchase");
@@ -499,7 +540,7 @@ namespace RestaurantIdle.Game
             };
 
             var staff = worker.AddComponent<StaffWorker>();
-            staff.Init(stationPosition + new Vector3(0.3f, 0.3f, 0f), StationCatalog.All[i].CycleSeconds);
+            staff.Init(stationPosition + new Vector3(0.3f, 0.3f, 0f), state.Stations[i].CycleSeconds(StationCatalog.All[i]));
         }
 
         /// <summary>
@@ -665,12 +706,31 @@ namespace RestaurantIdle.Game
                 var station = state.Stations[i];
                 var row = rows[i];
 
-                row.Label.text = $"{def.Name}: {station.OwnedCount}x"
-                    + $"\nKosten: {NumberFormat.Format(station.NextCost(def))}  |  Ertrag/Zyklus: {NumberFormat.Format(station.YieldPerCycle(def))} ({def.CycleSeconds}s)"
-                    + (station.HasManager ? "\nManager: aktiv" : $"\nManager: {NumberFormat.Format(def.ManagerCost)}");
+                if (station.IsUnlocked)
+                {
+                    row.Label.text = $"{def.Name}: Preis Lv.{station.PriceLevel} / Ausstattung Lv.{station.EquipmentLevel}"
+                        + $"\nErtrag/Verkauf: {NumberFormat.Format(station.YieldPerSale(def))}  |  Zyklus: {station.CycleSeconds(def):0.0}s"
+                        + (station.HasManager ? "\nManager: aktiv" : $"\nManager: {NumberFormat.Format(def.ManagerCost)}");
 
-                row.BuyButton.interactable = revenue >= station.NextCost(def);
-                row.ManagerButton.gameObject.SetActive(!station.HasManager);
+                    row.BuyButtonLabel.text = $"Preis erhoehen ({NumberFormat.Format(station.NextPriceUpgradeCost(def))})";
+                    row.BuyButton.interactable = revenue >= station.NextPriceUpgradeCost(def);
+
+                    row.EquipButton.gameObject.SetActive(true);
+                    row.EquipButtonLabel.text = $"Ausstattung ({NumberFormat.Format(station.NextEquipmentUpgradeCost(def))})";
+                    row.EquipButton.interactable = revenue >= station.NextEquipmentUpgradeCost(def);
+                }
+                else
+                {
+                    row.Label.text = $"{def.Name}: nicht freigeschaltet"
+                        + $"\nFreischalten: {NumberFormat.Format(station.UnlockCost(def))}";
+
+                    row.BuyButtonLabel.text = "Kaufen";
+                    row.BuyButton.interactable = revenue >= station.UnlockCost(def);
+
+                    row.EquipButton.gameObject.SetActive(false);
+                }
+
+                row.ManagerButton.gameObject.SetActive(station.IsUnlocked && !station.HasManager);
                 row.ManagerButton.interactable = revenue >= def.ManagerCost;
             }
         }
@@ -757,12 +817,16 @@ namespace RestaurantIdle.Game
                 var icon = Resources.Load<Sprite>($"Icons/{StationIconNames[index]}");
                 var label = CreateStationHeader(contentGo.transform, icon, preferredHeight: 80);
                 var buyButton = CreateButton(contentGo.transform, "Kaufen", () => BuyStation(index), preferredHeight: 60);
+                var equipButton = CreateButton(contentGo.transform, "Ausstattung", () => UpgradeEquipment(index), preferredHeight: 60);
                 var managerButton = CreateButton(contentGo.transform, "Manager", () => BuyManager(index), preferredHeight: 60);
 
                 rows.Add(new StationRow
                 {
                     Label = label,
                     BuyButton = buyButton,
+                    BuyButtonLabel = buyButton.GetComponentInChildren<Text>(),
+                    EquipButton = equipButton,
+                    EquipButtonLabel = equipButton.GetComponentInChildren<Text>(),
                     ManagerButton = managerButton,
                 });
             }

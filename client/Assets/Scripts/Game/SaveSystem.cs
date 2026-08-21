@@ -18,11 +18,12 @@ namespace RestaurantIdle.Game
         /// <summary>
         /// PLANv3.md Abschnitt 3/6 Phase A: muss vor jeder Strukturaenderung
         /// an GameState/Station stehen (siehe K1-Umbau in Phase B), sonst
-        /// brechen bestehende Spielstaende stillschweigend. 1 = aktuelle
-        /// Struktur (dieser Commit). 0 bedeutet: Save stammt von vor der
-        /// Einfuehrung von SchemaVersion.
+        /// brechen bestehende Spielstaende stillschweigend. 0 bedeutet: Save
+        /// stammt von vor der Einfuehrung von SchemaVersion. 1 = Phase A
+        /// (SchemaVersion eingefuehrt, Struktur sonst unveraendert). 2 =
+        /// Phase B, K1-Umbau: Station.OwnedCount -> PriceLevel/EquipmentLevel.
         /// </summary>
-        public const int CurrentSchemaVersion = 1;
+        public const int CurrentSchemaVersion = 2;
 
         private static string SavePath => Path.Combine(Application.persistentDataPath, "save.json");
 
@@ -83,6 +84,33 @@ namespace RestaurantIdle.Game
                 // die Struktur davor entspricht bereits Version 1.
                 state.SchemaVersion = 1;
             }
+
+            if (state.SchemaVersion < 2)
+            {
+                // PLANv3.md K1-Umbau: OwnedCount (Stueckzahl) -> PriceLevel +
+                // EquipmentLevel (zwei Upgrade-Achsen, eine Instanz pro
+                // Station). Keine exakte Ertrags-Fortsetzung versucht -- die
+                // Kostenkurven vorher wie nachher sind Platzhalter (siehe
+                // StationCatalog-Kommentar), eine 1:1-Uebernahme der
+                // Stueckzahl als Startlevel ist eine ehrliche, monotone
+                // Uebersetzung: mehr besessene Einheiten vorher -> hoeheres
+                // Level jetzt, kein besessenes Exemplar -> weiterhin
+                // gesperrt.
+#pragma warning disable CS0618 // Station.OwnedCount ist bewusst nur fuer diese Migration erhalten.
+                foreach (var station in state.Stations)
+                {
+                    if (station.OwnedCount > 0)
+                    {
+                        station.PriceLevel = station.OwnedCount;
+                        station.EquipmentLevel = station.OwnedCount;
+                    }
+
+                    station.OwnedCount = 0;
+                }
+#pragma warning restore CS0618
+
+                state.SchemaVersion = 2;
+            }
         }
 
         /// <summary>Fuellt fehlende Stationen mit leeren Instanzen auf -- betrifft neue Spielstaende und alte, falls der Katalog waechst.</summary>
@@ -95,20 +123,21 @@ namespace RestaurantIdle.Game
         }
 
         /// <summary>
-        /// Ohne mindestens eine besessene Station bei Umsatz 0 ist buchstaeblich
-        /// kein Button jemals leistbar oder klickbar (jede Station kostet > 0,
-        /// "Produzieren" braucht OwnedCount > 0) -- weder fuer einen frischen
-        /// Spielstand noch fuer einen aelteren, der (z.B. wegen dieses selben
-        /// Fehlers in einer frueheren Version) in genau diesem Zustand
-        /// haengengeblieben ist. Deshalb hier statt nur in einem "neues Spiel"-
-        /// Pfad: greift bei jedem Laden, nicht nur bei einem leeren Speicherstand.
+        /// Ohne mindestens eine freigeschaltete Station bei Umsatz 0 ist
+        /// buchstaeblich kein Button jemals leistbar oder klickbar (jede
+        /// Station kostet > 0, "Produzieren" braucht IsUnlocked) -- weder fuer
+        /// einen frischen Spielstand noch fuer einen aelteren, der (z.B. wegen
+        /// dieses selben Fehlers in einer frueheren Version) in genau diesem
+        /// Zustand haengengeblieben ist. Deshalb hier statt nur in einem "neues
+        /// Spiel"-Pfad: greift bei jedem Laden, nicht nur bei einem leeren
+        /// Speicherstand.
         /// </summary>
         private static void RescueFromDeadlock(GameState state)
         {
-            var hasAnyStation = state.Stations.Any(s => s.OwnedCount > 0);
+            var hasAnyStation = state.Stations.Any(s => s.IsUnlocked);
             if (!hasAnyStation && BigDouble.Parse(state.RevenueString) <= BigDouble.Zero && state.Stations.Count > 0)
             {
-                state.Stations[0].OwnedCount = 1;
+                state.Stations[0].Unlock();
             }
         }
     }
