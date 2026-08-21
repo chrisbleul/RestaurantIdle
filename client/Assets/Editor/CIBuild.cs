@@ -70,13 +70,28 @@ namespace RestaurantIdle.Editor
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
-            // Ohne jede Camera zeigt die Game View "No cameras rendering" als
-            // grauen Overlay ueber der UI -- die Canvas selbst (ScreenSpace
-            // Overlay) braucht zwar keine Kamera zum Zeichnen, aber Unity
-            // will trotzdem eine im Spiel sehen (Editor-Diagnose, Build
-            // Settings Warnung). Ganz simpel, rendert nichts Eigenes.
+            // PLANv2.md Abschnitt 4: orthografische Kamera in isometrischem
+            // Winkel (ca. 30 Grad Neigung, 45 Grad Drehung) statt der
+            // bisherigen reinen UI-Kamera ohne eigenes Rendering.
             var cameraObject = new GameObject("Main Camera", typeof(Camera));
             cameraObject.tag = "MainCamera";
+            var camera = cameraObject.GetComponent<Camera>();
+            camera.orthographic = true;
+            camera.orthographicSize = 6f;
+            camera.clearFlags = CameraClearFlags.SolidColor;
+            camera.backgroundColor = new Color(0.62f, 0.82f, 0.92f);
+            cameraObject.transform.rotation = Quaternion.Euler(30f, 45f, 0f);
+            cameraObject.transform.position = cameraObject.transform.rotation * new Vector3(0, 0, -15f);
+
+            var lightObject = new GameObject("Directional Light", typeof(Light));
+            var light = lightObject.GetComponent<Light>();
+            light.type = LightType.Directional;
+            light.intensity = 1.2f;
+            light.shadows = LightShadows.Soft;
+            lightObject.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+            RenderSettings.ambientLight = new Color(0.75f, 0.75f, 0.8f);
 
             var gameManagerObject = new GameObject("GameManager");
             gameManagerObject.AddComponent<GameManager>();
