@@ -183,20 +183,36 @@ namespace RestaurantIdle.Editor
         /// per MeshRenderer.bounds vermessen -- ggf. nach dem ersten
         /// Screenshot nachjustieren.
         /// </summary>
+        // PLANv3-Nachfolge, Nutzer-Feedback ("das spiel muss viel besser
+        // werden"): die Rueckwand nutzte bisher FurnitureScale (0.25) --
+        // genau der Platzhalter, den der urspruengliche Kommentar hier
+        // ("noch nicht per MeshRenderer.bounds vermessen") als provisorisch
+        // markiert hatte. Gemessen: building-block.fbx ist bei Scale 1
+        // 1.0 x 0.625 x 1.0 -- bei 0.25 also nur 0.156 Einheiten hoch,
+        // praktisch eine unsichtbare Bodenleiste. Die komplette Rueckwand
+        // war dadurch effektiv nie sichtbar (weder vorher mit der fixen
+        // Kamera, wo sie nur zufaellig durch Ueberzoomen kaschiert wurde,
+        // noch jetzt mit der mitwachsenden Kamera). Eigene, echt vermessene
+        // BuildingScale statt FurnitureScale mitverwendet.
+        private const float BuildingScale = 3.2f;
+
         private static void BuildBackWall()
         {
             const float wallZ = 1.5f;
+            const float segmentSpacing = BuildingScale; // native Breite 1.0 -> Segmente stossen nahtlos aneinander.
             var wallSegments = new[] { "building-block", "building-door-window", "building-block", "building-window" };
 
             for (var i = 0; i < wallSegments.Length; i++)
             {
-                var x = -0.5f + i * 2f;
+                var x = -1f + i * segmentSpacing;
                 InstantiateModel($"Assets/Models/Building/{wallSegments[i]}.fbx", $"Wall_{i}",
-                    new Vector3(x, 0f, wallZ), Quaternion.Euler(0f, 180f, 0f), FurnitureScale);
+                    new Vector3(x, 0f, wallZ), Quaternion.Euler(0f, 180f, 0f), BuildingScale);
             }
 
+            // Nahe der Oberkante der jetzt ~2 Einheiten hohen Wand (vorher
+            // bei y=1.3 -- passte nur zur alten, viel zu niedrigen Wand).
             InstantiateModel("Assets/Models/Building/roof-flat-awning-a.fbx", "Awning",
-                new Vector3(0.5f, 1.3f, 0.9f), Quaternion.identity, FurnitureScale);
+                new Vector3(0.5f, 1.9f, 0.9f), Quaternion.identity, BuildingScale);
         }
 
         private static void InstantiateModel(string assetPath, string instanceName, Vector3 position, Quaternion rotation,
