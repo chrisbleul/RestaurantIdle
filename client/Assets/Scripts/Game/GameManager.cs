@@ -436,14 +436,18 @@ namespace RestaurantIdle.Game
             var theme = LocationTheme.For(state.CurrentLocation);
 
             var ground = GameObject.Find("Ground");
+            Debug.Log($"[Theme] Ground found={ground != null}");
             if (ground != null && ground.TryGetComponent<MeshRenderer>(out var groundRenderer))
             {
+                Debug.Log($"[Theme] Ground material={groundRenderer.sharedMaterial}, before={groundRenderer.sharedMaterial.color}");
                 groundRenderer.sharedMaterial.color = theme.Ground;
+                Debug.Log($"[Theme] Ground after={groundRenderer.sharedMaterial.color}");
             }
 
             for (var i = 0; i < 4; i++)
             {
                 var wall = GameObject.Find($"Wall_{i}");
+                Debug.Log($"[Theme] Wall_{i} found={wall != null} hasRenderer={(wall != null && wall.TryGetComponent<MeshRenderer>(out _))}");
                 if (wall != null && wall.TryGetComponent<MeshRenderer>(out var wallRenderer))
                 {
                     wallRenderer.sharedMaterial.color = theme.Wall;
