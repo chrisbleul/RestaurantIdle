@@ -122,6 +122,8 @@ namespace RestaurantIdle.Game
 
         private struct StationRow
         {
+            /// <summary>Die ganze Zeile (Icon + Panel), fuers Ein-/Ausblenden -- siehe CreateStationHeader.</summary>
+            public GameObject Row;
             public Text Label;
             public Button BuyButton;
             public Image BuyButtonImage;
@@ -1096,7 +1098,7 @@ namespace RestaurantIdle.Game
                 // Zustand: die gleiche Bedingung neu auszuwerten ist billig
                 // (7 Stationen) und kann nie aus dem Takt geraten.
                 var isRevealed = i == 0 || state.Stations[i - 1].IsUnlocked;
-                row.Label.gameObject.SetActive(isRevealed);
+                row.Row.SetActive(isRevealed);
                 row.BuyButton.gameObject.SetActive(isRevealed);
                 if (!isRevealed)
                 {
@@ -1226,13 +1228,15 @@ namespace RestaurantIdle.Game
             {
                 var index = i; // lokale Kopie fuer die Closures unten
                 var icon = Resources.Load<Sprite>($"Icons/{StationIconNames[index]}");
-                var label = CreateStationHeader(contentGo.transform, icon, preferredHeight: 80);
+                var headerRow = CreateStationHeader(contentGo.transform, icon, preferredHeight: 80);
+                var label = headerRow.GetComponentInChildren<Text>();
                 var buyButton = CreateButton(contentGo.transform, "Kaufen", () => BuyStation(index), preferredHeight: 60);
                 var equipButton = CreateButton(contentGo.transform, "Ausstattung", () => UpgradeEquipment(index), preferredHeight: 60);
                 var managerButton = CreateButton(contentGo.transform, "Manager", () => BuyManager(index), preferredHeight: 60);
 
                 rows.Add(new StationRow
                 {
+                    Row = headerRow,
                     Label = label,
                     BuyButton = buyButton,
                     BuyButtonImage = buyButton.GetComponent<Image>(),
@@ -1255,20 +1259,47 @@ namespace RestaurantIdle.Game
             rect.offsetMax = Vector2.zero;
         }
 
+        /// <summary>
+        /// PLANv3.md Phase E: Text sass bisher direkt auf dem grauen Scroll-
+        /// Hintergrund -- keinerlei visuelle Gruppierung. Jetzt eine eigene
+        /// Kenney-UI-Pack-Karte (panel-rectangle, 9-Slice) je Zeile, Text als
+        /// eingerueckter Kind-Node darauf statt auf demselben GameObject --
+        /// gleiches Grundmuster wie CreateButton (Image aussen, Text innen).
+        /// </summary>
         private static Text CreateLabel(Transform parent, float preferredHeight)
         {
-            var go = new GameObject("Label", typeof(Text), typeof(LayoutElement));
+            var go = new GameObject("Label", typeof(Image), typeof(LayoutElement));
             go.transform.SetParent(parent, false);
 
-            var text = go.GetComponent<Text>();
-            text.font = Resources.Load<Font>("Fonts/Fredoka");
-            text.fontSize = 28;
-            text.alignment = TextAnchor.UpperLeft;
-            text.color = Color.black;
+            var panelImage = go.GetComponent<Image>();
+            var panelSprite = Resources.Load<Sprite>("UI/panel-rectangle");
+            if (panelSprite != null)
+            {
+                panelImage.sprite = panelSprite;
+                panelImage.type = Image.Type.Sliced;
+            }
+
+            panelImage.color = Color.white;
+            panelImage.raycastTarget = false;
 
             var layoutElement = go.GetComponent<LayoutElement>();
             layoutElement.preferredHeight = preferredHeight;
             layoutElement.flexibleWidth = 1;
+
+            var textGo = new GameObject("Text", typeof(Text));
+            textGo.transform.SetParent(go.transform, false);
+            var textRect = textGo.GetComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.pivot = new Vector2(0.5f, 0.5f);
+            textRect.offsetMin = new Vector2(18, 8);
+            textRect.offsetMax = new Vector2(-18, -8);
+
+            var text = textGo.GetComponent<Text>();
+            text.font = Resources.Load<Font>("Fonts/Fredoka");
+            text.fontSize = 28;
+            text.alignment = TextAnchor.UpperLeft;
+            text.color = Color.black;
 
             return text;
         }
@@ -1279,7 +1310,8 @@ namespace RestaurantIdle.Game
         /// Stationszeilen. icon darf null sein (z.B. Icon-PNG fehlt), dann
         /// verhaelt es sich wie eine reine Textzeile.
         /// </summary>
-        private static Text CreateStationHeader(Transform parent, Sprite icon, float preferredHeight)
+        /// <summary>Gibt die ganze Zeile zurueck (Icon + Panel-Label), nicht nur den Text -- RefreshUi braucht ein SetActive, das Icon und Panel mit einschliesst, siehe StationRow.Row.</summary>
+        private static GameObject CreateStationHeader(Transform parent, Sprite icon, float preferredHeight)
         {
             var rowGo = new GameObject("StationHeader", typeof(HorizontalLayoutGroup), typeof(LayoutElement));
             rowGo.transform.SetParent(parent, false);
@@ -1308,7 +1340,8 @@ namespace RestaurantIdle.Game
                 iconLayoutElement.flexibleWidth = 0;
             }
 
-            return CreateLabel(rowGo.transform, preferredHeight);
+            CreateLabel(rowGo.transform, preferredHeight);
+            return rowGo;
         }
 
         private static Button CreateButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick, float preferredHeight)
