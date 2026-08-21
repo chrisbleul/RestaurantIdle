@@ -93,12 +93,55 @@ namespace RestaurantIdle.Editor
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.75f, 0.75f, 0.8f);
 
+            BuildLocation1Placeholder();
+
             var gameManagerObject = new GameObject("GameManager");
             gameManagerObject.AddComponent<GameManager>();
 
             EditorSceneManager.SaveScene(scene, ScenePath);
 
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
+        }
+
+        /// <summary>
+        /// PLANv2.md Abschnitt 6/8: erster sichtbarer Baustein von Location 1
+        /// (Limonadenstand) -- Kenney Furniture Kit (CC0). Noch reine
+        /// Platzierung, keine Anbindung an GameManager/Balancing (folgt in
+        /// einem eigenen Schritt, sobald die Optik steht).
+        /// </summary>
+        private static void BuildLocation1Placeholder()
+        {
+            var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
+            ground.name = "Ground";
+            ground.transform.position = Vector3.zero;
+            ground.transform.localScale = new Vector3(3f, 1f, 3f);
+            var groundRenderer = ground.GetComponent<MeshRenderer>();
+            groundRenderer.sharedMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
+            {
+                color = new Color(0.55f, 0.75f, 0.45f),
+            };
+
+            InstantiateModel("Assets/Models/Furniture/kitchenBar.fbx", "Station_Kaffeemaschine_Theke",
+                new Vector3(0f, 0f, 0f), Quaternion.identity);
+            InstantiateModel("Assets/Models/Furniture/kitchenCoffeeMachine.fbx", "Station_Kaffeemaschine",
+                new Vector3(0f, 0.9f, 0f), Quaternion.identity);
+            InstantiateModel("Assets/Models/Furniture/stoolBar.fbx", "Hocker",
+                new Vector3(0f, 0f, -1.2f), Quaternion.identity);
+        }
+
+        private static void InstantiateModel(string assetPath, string instanceName, Vector3 position, Quaternion rotation)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+            if (prefab == null)
+            {
+                Debug.LogWarning($"Modell nicht gefunden: {assetPath}");
+                return;
+            }
+
+            var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            instance.name = instanceName;
+            instance.transform.position = position;
+            instance.transform.rotation = rotation;
         }
     }
 
