@@ -93,8 +93,13 @@ namespace RestaurantIdle.Editor
             light.shadows = LightShadows.Soft;
             lightObject.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
 
+            // War vorher 0.75/0.75/0.8 -- zusammen mit dem Directional Light
+            // hat das jede Materialfarbe stark Richtung Weiss verwaschen
+            // (sichtbar beim Location-Farbwechsel: sattes Grau kam als
+            // blasses Lavendel an). Deutlich gedaempft, damit Basisfarben
+            // erkennbar bleiben.
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.75f, 0.75f, 0.8f);
+            RenderSettings.ambientLight = new Color(0.35f, 0.35f, 0.4f);
 
             BuildLocation1Placeholder();
 
