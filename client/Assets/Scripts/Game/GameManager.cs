@@ -221,18 +221,29 @@ namespace RestaurantIdle.Game
         /// </summary>
         private void HandleStationTap()
         {
-            if (!Input.GetMouseButtonDown(0) || EventSystem.current.IsPointerOverGameObject())
+            if (!Input.GetMouseButtonDown(0))
+            {
+                return;
+            }
+
+            Debug.Log($"[Tap] mouseDown bei {Input.mousePosition}, overUI={EventSystem.current.IsPointerOverGameObject()}");
+
+            if (EventSystem.current.IsPointerOverGameObject())
             {
                 return;
             }
 
             if (Camera.main == null)
             {
+                Debug.Log("[Tap] Camera.main ist null");
                 return;
             }
 
             var ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-            if (Physics.Raycast(ray, out var hit) && hit.collider.TryGetComponent<StationHotspot>(out var hotspot))
+            var didHit = Physics.Raycast(ray, out var hit);
+            Debug.Log($"[Tap] Raycast didHit={didHit} collider={(didHit ? hit.collider.name : "-")}");
+
+            if (didHit && hit.collider.TryGetComponent<StationHotspot>(out var hotspot))
             {
                 ProduceNow(hotspot.StationIndex, hit.point);
             }
