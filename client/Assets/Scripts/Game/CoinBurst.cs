@@ -17,6 +17,11 @@ namespace RestaurantIdle.Game
             go.transform.position = position;
 
             var ps = go.GetComponent<ParticleSystem>();
+            // AddComponent<ParticleSystem> startet wegen playOnAwake=true
+            // sofort -- main.duration laesst sich waehrend des Abspielens
+            // nicht setzen, deshalb erst stoppen.
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
             var main = ps.main;
             main.duration = 0.4f;
             main.loop = false;
