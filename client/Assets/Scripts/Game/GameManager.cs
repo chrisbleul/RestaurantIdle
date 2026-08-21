@@ -115,6 +115,14 @@ namespace RestaurantIdle.Game
                 stationWorldPositions[hotspot.StationIndex] = hotspot.transform.position;
             }
 
+            for (var i = 0; i < state.Stations.Count; i++)
+            {
+                if (state.Stations[i].HasManager)
+                {
+                    SpawnStaffWorker(i);
+                }
+            }
+
             RefreshUi();
 
             // Deckt insbesondere den Umzug eines bisher rein lokalen
@@ -383,6 +391,35 @@ namespace RestaurantIdle.Game
             RefreshUi();
             FlashHeader();
             PlaySfx("sfx-purchase");
+            SpawnStaffWorker(i);
+        }
+
+        /// <summary>
+        /// PLANv2.md Abschnitt 9: sichtbares Personal an Stationen mit
+        /// Manager. Wird sowohl bei einem frischen Kauf (BuyManager) als
+        /// auch beim Laden eines Spielstands mit bereits vorhandenen
+        /// Managern aufgerufen (siehe InitializeGame).
+        /// </summary>
+        private void SpawnStaffWorker(int i)
+        {
+            if (!stationWorldPositions.TryGetValue(i, out var stationPosition))
+            {
+                return;
+            }
+
+            var worker = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            worker.name = $"Staff_{i}";
+            worker.transform.localScale = new Vector3(0.22f, 0.35f, 0.22f);
+            Destroy(worker.GetComponent<Collider>());
+
+            var renderer = worker.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
+            {
+                color = Color.white,
+            };
+
+            var staff = worker.AddComponent<StaffWorker>();
+            staff.Init(stationPosition + new Vector3(0.3f, 0.3f, 0f), StationCatalog.All[i].CycleSeconds);
         }
 
         private void BuyMarketing()
