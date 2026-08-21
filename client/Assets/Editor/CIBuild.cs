@@ -204,7 +204,6 @@ namespace RestaurantIdle.Editor
         // Kamera "richtig" gemessenen, aber fuer die neue dynamische
         // Kamera zu grossen Zahl.
         private const float BuildingScale = 1.0f;
-        private const float WallNativeHeight = 0.625f;
 
         private static void BuildBackWall()
         {
@@ -219,14 +218,15 @@ namespace RestaurantIdle.Editor
                     new Vector3(x, 0f, wallZ), Quaternion.Euler(0f, 180f, 0f), BuildingScale);
             }
 
-            // Y relativ zur tatsaechlichen Wandhoehe statt eines fest
-            // eingetragenen Werts -- sonst faellt die Awning bei der
-            // naechsten BuildingScale-Anpassung wieder aus dem Rahmen
-            // (ist beim ersten Versuch mit BuildingScale 3.2->1.0 bereits
-            // passiert).
-            var awningY = WallNativeHeight * BuildingScale * 0.85f;
+            // Bewusst HOEHER als die architektonisch "korrekte" Position
+            // auf der Wandoberkante (native Wandhoehe 0.625 * BuildingScale):
+            // beim Screenshot-Abgleich verschwand die Awning dort fast
+            // komplett hinter der vorderen Station. Weiter oben sitzend
+            // zeichnet sie eine klar sichtbare Dachlinie gegen den Himmel
+            // -- das liest sich als "Restaurant" deutlich staerker als
+            // physikalische Genauigkeit an dieser Stelle bringt.
             InstantiateModel("Assets/Models/Building/roof-flat-awning-a.fbx", "Awning",
-                new Vector3(0.5f, awningY, 0.9f), Quaternion.identity, BuildingScale);
+                new Vector3(0.5f, 1.3f, 0.9f), Quaternion.identity, BuildingScale);
         }
 
         private static void InstantiateModel(string assetPath, string instanceName, Vector3 position, Quaternion rotation,
