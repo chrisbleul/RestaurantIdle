@@ -431,26 +431,31 @@ namespace RestaurantIdle.Game
         /// gesucht, weil sie editor-seitig in CIBuild.cs einmalig gebaut
         /// werden, nicht zur Laufzeit.
         /// </summary>
+        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+
+        /// <summary>
+        /// Material.color ist eine Kompatibilitaets-Eigenschaft, die bei
+        /// URP-Shadern (_BaseColor statt des klassischen _Color) unzuverlaessig
+        /// ist -- der Getter liefert zwar den neu gesetzten Wert zurueck, ohne
+        /// dass es sich sichtbar auf das Rendering auswirkt. SetColor auf den
+        /// konkreten URP-Property-Namen umgeht das.
+        /// </summary>
         private void ApplyLocationTheme()
         {
             var theme = LocationTheme.For(state.CurrentLocation);
 
             var ground = GameObject.Find("Ground");
-            Debug.Log($"[Theme] Ground found={ground != null}");
             if (ground != null && ground.TryGetComponent<MeshRenderer>(out var groundRenderer))
             {
-                Debug.Log($"[Theme] Ground material={groundRenderer.sharedMaterial}, before={groundRenderer.sharedMaterial.color}");
-                groundRenderer.sharedMaterial.color = theme.Ground;
-                Debug.Log($"[Theme] Ground after={groundRenderer.sharedMaterial.color}");
+                groundRenderer.sharedMaterial.SetColor(BaseColorId, theme.Ground);
             }
 
             for (var i = 0; i < 4; i++)
             {
                 var wall = GameObject.Find($"Wall_{i}");
-                Debug.Log($"[Theme] Wall_{i} found={wall != null} hasRenderer={(wall != null && wall.TryGetComponent<MeshRenderer>(out _))}");
                 if (wall != null && wall.TryGetComponent<MeshRenderer>(out var wallRenderer))
                 {
-                    wallRenderer.sharedMaterial.color = theme.Wall;
+                    wallRenderer.sharedMaterial.SetColor(BaseColorId, theme.Wall);
                 }
             }
         }
