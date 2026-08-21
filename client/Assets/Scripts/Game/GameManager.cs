@@ -504,7 +504,15 @@ namespace RestaurantIdle.Game
         /// liefert dieselbe Sichtbarkeits-Bedingung) -- das Herauszoomen
         /// selbst wird so nebenbei zu einem kleinen Belohnungsmoment.
         /// </summary>
-        private const float MinOrthographicSize = 4f;
+        // Nutzer-Feedback ("das design gefaellt mir weiterhin nicht"): 4
+        // war der Wert aus der alten fixen CIBuild-Kamera, nie gegen die
+        // neue mitwachsende Kamera geprueft. Mit nur ein bis zwei
+        // Stationen sichtbar (Fruehspiel) liegt die inhaltsbasierte
+        // Rechnung in RecomputeCameraTarget weit UNTER 4 -- die Untergrenze
+        // selbst war die eigentliche Ursache fuer den grossen leeren
+        // Bereich um die Station, nicht die Wand-/Awning-Skalierung, an
+        // der zuvor mehrfach nachjustiert wurde.
+        private const float MinOrthographicSize = 2f;
         private const float CameraFramingMarginX = 1.4f;
         private const float CameraFramingLerpSpeed = 1.2f;
         private const float CameraLookAtY = 0.4f;
