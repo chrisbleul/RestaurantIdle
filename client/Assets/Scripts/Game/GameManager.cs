@@ -221,7 +221,13 @@ namespace RestaurantIdle.Game
 
             RefreshUi();
 
-            if (pendingOfflineEarnings > BigDouble.Zero)
+            // PLANv3.md Phase F: waehrend eines Live-Testlaufs aufgefallen --
+            // ein "Waehrend du weg warst..."-Dialog fuer "0 Minuten" (schneller
+            // Neustart, Editor-Recompile) unterbricht mehr, als er bringt. Das
+            // Geld wird trotzdem immer gutgeschrieben (siehe ApplyOfflineEarnings),
+            // nur der Dialog braucht eine sinnvolle Untergrenze.
+            const double MinOfflineMinutesForDialog = 1.0;
+            if (pendingOfflineEarnings > BigDouble.Zero && pendingOfflineMinutes >= MinOfflineMinutesForDialog)
             {
                 ShowOfflineEarningsDialog(pendingOfflineEarnings, pendingOfflineMinutes);
             }
