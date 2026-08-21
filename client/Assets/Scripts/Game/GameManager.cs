@@ -87,6 +87,9 @@ namespace RestaurantIdle.Game
         {
             public GuestMover Mover;
             public float PatienceRemaining;
+
+            /// <summary>PLANv3.md Abschnitt 4: Dauer-Dampfeffekt als Bedient-Signal, siehe SteamEffect. Null bis der Gast ankommt, danach bis Visit-Ende aktiv.</summary>
+            public GameObject SteamEffect;
         }
 
         // PLANv3.md K2: Geduld muss mindestens eine volle Zykluszeit der
@@ -325,6 +328,11 @@ namespace RestaurantIdle.Game
                     continue; // noch unterwegs -- Geduld laeuft erst ab Ankunft an der Station.
                 }
 
+                if (visit.SteamEffect == null && stationWorldPositions.TryGetValue(stationIndex, out var steamPosition))
+                {
+                    visit.SteamEffect = SteamEffect.SpawnLoopingAt(steamPosition);
+                }
+
                 var station = state.Stations[stationIndex];
                 var def = StationCatalog.All[stationIndex];
 
@@ -364,6 +372,11 @@ namespace RestaurantIdle.Game
 
             foreach (var stationIndex in finished)
             {
+                if (guestAtStation.TryGetValue(stationIndex, out var visit) && visit.SteamEffect != null)
+                {
+                    Destroy(visit.SteamEffect);
+                }
+
                 guestAtStation.Remove(stationIndex);
             }
         }
@@ -601,6 +614,11 @@ namespace RestaurantIdle.Game
             PlaySfx("sfx-produce");
 
             visit.Mover.Leave();
+            if (visit.SteamEffect != null)
+            {
+                Destroy(visit.SteamEffect);
+            }
+
             guestAtStation.Remove(i);
 
             var position = burstPosition ?? (stationWorldPositions.TryGetValue(i, out var pos) ? pos : (Vector3?)null);
@@ -630,6 +648,7 @@ namespace RestaurantIdle.Game
             if (station.IsUnlocked)
             {
                 station.UpgradePrice();
+                PlayMilestoneEffectIfReached(i, station.PriceLevel);
             }
             else
             {
@@ -659,9 +678,32 @@ namespace RestaurantIdle.Game
 
             revenue -= cost;
             station.UpgradeEquipment();
+            PlayMilestoneEffectIfReached(i, station.EquipmentLevel);
             RefreshUi();
             FlashHeader();
             PlaySfx("sfx-purchase");
+        }
+
+        /// <summary>
+        /// PLANv2.md Abschnitt 8/11: groesserer Partikel-Burst + eigener
+        /// Sound, wenn Preis- oder Ausstattungs-Level gerade eine der
+        /// Milestones.DefaultThresholds-Schwellen (10/25/50) erreicht hat --
+        /// dieselbe Schwelle, die BalancingCore.Milestones fuer den
+        /// Ertrags-Multiplikator verwendet (siehe Station.YieldPerSale).
+        /// </summary>
+        private void PlayMilestoneEffectIfReached(int stationIndex, int newLevel)
+        {
+            if (Array.IndexOf(Milestones.DefaultThresholds, newLevel) < 0)
+            {
+                return;
+            }
+
+            if (stationWorldPositions.TryGetValue(stationIndex, out var position))
+            {
+                MilestoneEffect.SpawnAt(position);
+            }
+
+            PlaySfx("sfx-milestone");
         }
 
         private void BuyManager(int i)
@@ -788,6 +830,13 @@ namespace RestaurantIdle.Game
             // sonst waere nach dem Reset buchstaeblich kein Kauf mehr moeglich.
             SaveSystem.Normalize(state);
             ApplyLocationTheme();
+
+            // PLANv3.md Phase D: ohne diesen Aufruf blieben zuvor
+            // freigeschaltete Stationen (i>=1) in der 3D-Szene faelschlich
+            // sichtbar, obwohl state.Stations gerade komplett zurueckgesetzt
+            // wurde -- RevealStationsAsNeeded() wird sonst nur beim Laden
+            // und bei BuyStation() aufgerufen.
+            RevealStationsAsNeeded();
 
             // Alte Personal-Figuren gehoeren zu Stationen, die soeben
             // zurueckgesetzt wurden -- ohne Aufraeumen wuerden sie verwaist
