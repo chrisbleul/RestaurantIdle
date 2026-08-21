@@ -71,8 +71,17 @@ namespace RestaurantIdle.Editor
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
             // PLANv2.md Abschnitt 4: orthografische Kamera in isometrischem
-            // Winkel (ca. 30 Grad Neigung, 45 Grad Drehung) statt der
-            // bisherigen reinen UI-Kamera ohne eigenes Rendering.
+            // Winkel, 45 Grad Drehung.
+            //
+            // Nutzer-Feedback ("das design gefaellt mir weiterhin nicht"):
+            // 30 Grad Neigung ist flach genug, dass Himmel UND Boden bis
+            // zum Horizont ins Bild kommen -- bei der engen Fruehspiel-
+            // Kamera (wenig Inhalt) blieb dadurch mehr leere Flaeche als
+            // Inhalt sichtbar, egal wie die einzelnen Modelle skaliert
+            // waren. 55 Grad (steilerer, mehr top-down Blick, wie bei
+            // Eatventure/Cat Snack Bar) zeigt stattdessen ueberwiegend die
+            // Arbeitsflaeche selbst -- der eigentliche Hebel war der
+            // Kamerawinkel, nicht die Wand-Skalierung.
             var cameraObject = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener));
             cameraObject.tag = "MainCamera";
             var camera = cameraObject.GetComponent<Camera>();
@@ -80,7 +89,7 @@ namespace RestaurantIdle.Editor
             camera.orthographicSize = 4f;
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.62f, 0.82f, 0.92f);
-            cameraObject.transform.rotation = Quaternion.Euler(30f, 45f, 0f);
+            cameraObject.transform.rotation = Quaternion.Euler(55f, 45f, 0f);
             // Zielpunkt ungefaehr in der Mitte der Location-1-Objekte, nicht
             // Weltursprung -- die Theke selbst hat ihren Pivot in einer Ecke.
             var lookTarget = new Vector3(2.8f, 0.4f, 0f);
