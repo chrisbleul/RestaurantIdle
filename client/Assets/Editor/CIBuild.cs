@@ -70,6 +70,14 @@ namespace RestaurantIdle.Editor
 
             var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
+            // Ohne jede Camera zeigt die Game View "No cameras rendering" als
+            // grauen Overlay ueber der UI -- die Canvas selbst (ScreenSpace
+            // Overlay) braucht zwar keine Kamera zum Zeichnen, aber Unity
+            // will trotzdem eine im Spiel sehen (Editor-Diagnose, Build
+            // Settings Warnung). Ganz simpel, rendert nichts Eigenes.
+            var cameraObject = new GameObject("Main Camera", typeof(Camera));
+            cameraObject.tag = "MainCamera";
+
             var gameManagerObject = new GameObject("GameManager");
             gameManagerObject.AddComponent<GameManager>();
 
