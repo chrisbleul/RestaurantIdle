@@ -617,7 +617,7 @@ namespace RestaurantIdle.Game
             go.transform.SetParent(parent, false);
 
             var text = go.GetComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.font = Resources.Load<Font>("Fonts/Fredoka");
             text.fontSize = 28;
             text.alignment = TextAnchor.UpperLeft;
             text.color = Color.black;
@@ -687,7 +687,7 @@ namespace RestaurantIdle.Game
             labelGo.transform.SetParent(go.transform, false);
             StretchToFillParent(labelGo.GetComponent<RectTransform>());
             var labelText = labelGo.GetComponent<Text>();
-            labelText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            labelText.font = Resources.Load<Font>("Fonts/Fredoka");
             labelText.fontSize = 28;
             labelText.alignment = TextAnchor.MiddleCenter;
             labelText.color = Color.black;
