@@ -77,13 +77,13 @@ namespace RestaurantIdle.Editor
             cameraObject.tag = "MainCamera";
             var camera = cameraObject.GetComponent<Camera>();
             camera.orthographic = true;
-            camera.orthographicSize = 3f;
+            camera.orthographicSize = 5f;
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.62f, 0.82f, 0.92f);
             cameraObject.transform.rotation = Quaternion.Euler(30f, 45f, 0f);
             // Zielpunkt ungefaehr in der Mitte der Location-1-Objekte, nicht
             // Weltursprung -- die Theke selbst hat ihren Pivot in einer Ecke.
-            var lookTarget = new Vector3(0.5f, 0.4f, 0f);
+            var lookTarget = new Vector3(4.5f, 0.4f, 0f);
             cameraObject.transform.position = lookTarget + cameraObject.transform.rotation * new Vector3(0, 0, -15f);
 
             var lightObject = new GameObject("Directional Light", typeof(Light));
@@ -122,8 +122,8 @@ namespace RestaurantIdle.Editor
         {
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
-            ground.transform.position = Vector3.zero;
-            ground.transform.localScale = new Vector3(1f, 1f, 1f);
+            ground.transform.position = new Vector3(4f, 0f, 0f);
+            ground.transform.localScale = new Vector3(1.5f, 1f, 1f);
             var groundRenderer = ground.GetComponent<MeshRenderer>();
             groundRenderer.sharedMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
             {
@@ -144,6 +144,28 @@ namespace RestaurantIdle.Editor
 
             InstantiateModel("Assets/Models/Furniture/stoolBar.fbx", "Hocker",
                 new Vector3(0.5f, 0f, -0.6f), Quaternion.identity, FurnitureScale);
+
+            // Restliche 6 Stationen (StationCatalog.All Index 1-6) als Reihe
+            // auf dem Boden -- noch ohne eigene Theke, reine Platzierung wie
+            // bei Station 0. Modelle sind Annaeherungen (kein 1:1-Match zu
+            // jedem Stationsnamen im Kenney-Kit vorhanden).
+            var remainingStations = new (string Model, string StationName)[]
+            {
+                ("kitchenStoveElectric.fbx", "Fritteuse"),
+                ("kitchenStove.fbx", "Grill"),
+                ("kitchenMicrowave.fbx", "Pizzaofen"),
+                ("kitchenSink.fbx", "Sushi-Bar"),
+                ("kitchenFridgeSmall.fbx", "Patisserie"),
+                ("tableRound.fbx", "Chefs Table"),
+            };
+
+            for (var i = 0; i < remainingStations.Length; i++)
+            {
+                var (model, stationName) = remainingStations[i];
+                var x = 2.5f + i * 1.4f;
+                InstantiateModel($"Assets/Models/Furniture/{model}", $"Station_{stationName}",
+                    new Vector3(x, 0f, 0f), Quaternion.identity, FurnitureScale);
+            }
         }
 
         private static void InstantiateModel(string assetPath, string instanceName, Vector3 position, Quaternion rotation, float scale = 1f)
