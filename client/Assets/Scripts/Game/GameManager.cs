@@ -931,7 +931,10 @@ namespace RestaurantIdle.Game
             scrollRect.horizontal = false;
             scrollRect.vertical = true;
 
-            headerLabel = CreateLabel(contentGo.transform, preferredHeight: 130);
+            // 170 statt 130 -- bei 130 wurde die vierte Zeile (Marketing-
+            // Stufe) im Text-Rect abgeschnitten, sichtbar geworden erst beim
+            // visuellen Abgleich der PLANv3-Phase-C-Aenderungen.
+            headerLabel = CreateLabel(contentGo.transform, preferredHeight: 170);
             marketingButtonRef = CreateButton(contentGo.transform, "Marketing kaufen", BuyMarketing, preferredHeight: 70);
             prestigeLabel = CreateLabel(contentGo.transform, preferredHeight: 80);
             prestigeButtonRef = CreateButton(contentGo.transform, "Renovieren", PrestigeReset, preferredHeight: 70);
