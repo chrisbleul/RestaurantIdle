@@ -64,6 +64,16 @@ namespace RestaurantIdle.Game
         private readonly Dictionary<int, Vector3> stationWorldPositions = new();
 
         /// <summary>
+        /// PLANv3.md Abschnitt 4 ("Alle Stationen sofort sichtbar -> keine
+        /// Entdeckung, keine Belohnung fuers Weiterspielen"): Station i>=1
+        /// bleibt unsichtbar (SetActive false, damit auch Collider/Tap aus
+        /// sind), bis Station i-1 freigeschaltet ist -- macht jede neue
+        /// Station zu einem Ereignis statt einer von sieben gleichzeitig
+        /// sichtbaren Listenzeilen.
+        /// </summary>
+        private readonly Dictionary<int, GameObject> stationGameObjects = new();
+
+        /// <summary>
         /// PLANv3.md K2-Umbau: Geld entsteht ausschliesslich beim Servieren
         /// eines echten Gastes -- diese Zuordnung IST die Theke jeder
         /// Station. Hoechstens ein Eintrag pro Stations-Index (kein
@@ -106,11 +116,19 @@ namespace RestaurantIdle.Game
         {
             public Text Label;
             public Button BuyButton;
+            public Image BuyButtonImage;
             public Text BuyButtonLabel;
             public Button EquipButton;
             public Text EquipButtonLabel;
             public Button ManagerButton;
         }
+
+        // PLANv3.md Phase D ("Kein Tutorial, kein geführter erster Kauf"):
+        // der allererste Kauf im Spiel bekommt eine auffaellige Farbe statt
+        // im grauen Einheitsbrei unterzugehen -- billigste Form von
+        // Fuehrung ohne echtes Tutorial-System.
+        private static readonly Color GuidedButtonColor = new Color(0.98f, 0.75f, 0.25f);
+        private static readonly Color DefaultButtonColor = new Color(0.8f, 0.8f, 0.8f);
 
         private void Start()
         {
@@ -160,7 +178,10 @@ namespace RestaurantIdle.Game
             foreach (var hotspot in FindObjectsByType<StationHotspot>(FindObjectsSortMode.None))
             {
                 stationWorldPositions[hotspot.StationIndex] = hotspot.transform.position;
+                stationGameObjects[hotspot.StationIndex] = hotspot.gameObject;
             }
+
+            RevealStationsAsNeeded();
 
             for (var i = 0; i < state.Stations.Count; i++)
             {
@@ -486,6 +507,30 @@ namespace RestaurantIdle.Game
             return candidates.Count == 0 ? null : candidates[UnityEngine.Random.Range(0, candidates.Count)];
         }
 
+        /// <summary>
+        /// PLANv3.md Phase D: Station 0 ist immer sichtbar, jede weitere
+        /// erst, sobald die vorherige freigeschaltet ist. Wird beim Laden
+        /// und nach jedem erfolgreichen Freischalten aufgerufen -- billig
+        /// genug (7 Stationen, kein Hot-Path) fuer ein simples Neu-Setzen
+        /// statt Delta-Tracking.
+        /// </summary>
+        private void RevealStationsAsNeeded()
+        {
+            for (var i = 0; i < state.Stations.Count; i++)
+            {
+                if (!stationGameObjects.TryGetValue(i, out var go))
+                {
+                    continue;
+                }
+
+                var shouldBeVisible = i == 0 || state.Stations[i - 1].IsUnlocked;
+                if (go.activeSelf != shouldBeVisible)
+                {
+                    go.SetActive(shouldBeVisible);
+                }
+            }
+        }
+
         private void OnApplicationQuit()
         {
             if (isInitialized)
@@ -589,6 +634,7 @@ namespace RestaurantIdle.Game
             else
             {
                 station.Unlock();
+                RevealStationsAsNeeded();
             }
 
             RefreshUi();
@@ -806,17 +852,31 @@ namespace RestaurantIdle.Game
             var guestFlow = GuestFlow.GuestFlowAt(state.MarketingLevel);
             var marketingCost = GuestFlow.NextMarketingCost(state.MarketingLevel);
             var unlockedCount = 0;
-            foreach (var s in state.Stations)
+            var nextGoalIndex = -1;
+            for (var i = 0; i < state.Stations.Count; i++)
             {
-                if (s.IsUnlocked)
+                if (state.Stations[i].IsUnlocked)
                 {
                     unlockedCount++;
                 }
+                else if (nextGoalIndex < 0)
+                {
+                    nextGoalIndex = i;
+                }
             }
+
+            // PLANv3.md Phase D: "kein sichtbares naechstes Ziel" war einer
+            // der konkreten Befunde -- diese Zeile ersetzt sieben
+            // gleichzeitig sichtbare Listenzeilen durch eine klare Ansage,
+            // was als naechstes zu tun ist.
+            var nextGoalText = nextGoalIndex < 0
+                ? "Alle Stationen freigeschaltet!"
+                : $"Naechstes Ziel: {StationCatalog.All[nextGoalIndex].Name} fuer {NumberFormat.Format(state.Stations[nextGoalIndex].UnlockCost(StationCatalog.All[nextGoalIndex]))}";
 
             headerLabel.text = $"{LocationTheme.For(state.CurrentLocation).Name}"
                 + $"\nUmsatz: {NumberFormat.Format(revenue)}\nLifetime: {NumberFormat.Format(lifetimeRevenue)}"
                 + $"\nGaestestrom: {NumberFormat.Format(guestFlow)}  (Stationen belegt: {guestAtStation.Count}/{unlockedCount})"
+                + $"\n{nextGoalText}"
                 + $"\nMarketing Stufe {state.MarketingLevel} -- naechste Stufe: {NumberFormat.Format(marketingCost)}";
             marketingButtonRef.interactable = revenue >= marketingCost;
 
@@ -830,6 +890,22 @@ namespace RestaurantIdle.Game
                 var def = StationCatalog.All[i];
                 var station = state.Stations[i];
                 var row = rows[i];
+
+                // PLANv3.md Phase D: dieselbe Staffelung wie in der 3D-Szene
+                // (RevealStationsAsNeeded) -- sonst wuerde die Liste alle
+                // sieben Stationen zeigen, waehrend die Szene nur die
+                // naechste sichtbar macht. Bewusst kein eigener Boolean-
+                // Zustand: die gleiche Bedingung neu auszuwerten ist billig
+                // (7 Stationen) und kann nie aus dem Takt geraten.
+                var isRevealed = i == 0 || state.Stations[i - 1].IsUnlocked;
+                row.Label.gameObject.SetActive(isRevealed);
+                row.BuyButton.gameObject.SetActive(isRevealed);
+                if (!isRevealed)
+                {
+                    row.EquipButton.gameObject.SetActive(false);
+                    row.ManagerButton.gameObject.SetActive(false);
+                    continue;
+                }
 
                 if (station.IsUnlocked)
                 {
@@ -854,6 +930,8 @@ namespace RestaurantIdle.Game
 
                     row.EquipButton.gameObject.SetActive(false);
                 }
+
+                row.BuyButtonImage.color = (i == 0 && !station.IsUnlocked) ? GuidedButtonColor : DefaultButtonColor;
 
                 row.ManagerButton.gameObject.SetActive(station.IsUnlocked && !station.HasManager);
                 row.ManagerButton.interactable = revenue >= def.ManagerCost;
@@ -931,10 +1009,11 @@ namespace RestaurantIdle.Game
             scrollRect.horizontal = false;
             scrollRect.vertical = true;
 
-            // 170 statt 130 -- bei 130 wurde die vierte Zeile (Marketing-
-            // Stufe) im Text-Rect abgeschnitten, sichtbar geworden erst beim
-            // visuellen Abgleich der PLANv3-Phase-C-Aenderungen.
-            headerLabel = CreateLabel(contentGo.transform, preferredHeight: 170);
+            // 205 statt 130 -- bei 130 wurde die vierte Zeile (Marketing-
+            // Stufe) im Text-Rect abgeschnitten (siehe PLANv3 Phase-C-Fix),
+            // die fuenfte Zeile (Naechstes Ziel, PLANv3 Phase D) braucht
+            // noch mal Platz dazu.
+            headerLabel = CreateLabel(contentGo.transform, preferredHeight: 205);
             marketingButtonRef = CreateButton(contentGo.transform, "Marketing kaufen", BuyMarketing, preferredHeight: 70);
             prestigeLabel = CreateLabel(contentGo.transform, preferredHeight: 80);
             prestigeButtonRef = CreateButton(contentGo.transform, "Renovieren", PrestigeReset, preferredHeight: 70);
@@ -952,6 +1031,7 @@ namespace RestaurantIdle.Game
                 {
                     Label = label,
                     BuyButton = buyButton,
+                    BuyButtonImage = buyButton.GetComponent<Image>(),
                     BuyButtonLabel = buyButton.GetComponentInChildren<Text>(),
                     EquipButton = equipButton,
                     EquipButtonLabel = equipButton.GetComponentInChildren<Text>(),
