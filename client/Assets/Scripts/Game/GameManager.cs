@@ -109,6 +109,7 @@ namespace RestaurantIdle.Game
             }
 
             BuildUi();
+            ApplyLocationTheme();
 
             foreach (var hotspot in FindObjectsByType<StationHotspot>(FindObjectsSortMode.None))
             {
@@ -422,6 +423,34 @@ namespace RestaurantIdle.Game
             staff.Init(stationPosition + new Vector3(0.3f, 0.3f, 0f), StationCatalog.All[i].CycleSeconds);
         }
 
+        /// <summary>
+        /// PLANv2.md Abschnitt 10: faerbt Boden/Waende nach dem aktuellen
+        /// Location-Index um -- macht eine Renovierung sichtbar, ohne eigene
+        /// 3D-Assets pro Location zu brauchen (Farbpalette statt neuer
+        /// Geometrie, siehe LocationTheme). Objekte werden per Name
+        /// gesucht, weil sie editor-seitig in CIBuild.cs einmalig gebaut
+        /// werden, nicht zur Laufzeit.
+        /// </summary>
+        private void ApplyLocationTheme()
+        {
+            var theme = LocationTheme.For(state.CurrentLocation);
+
+            var ground = GameObject.Find("Ground");
+            if (ground != null && ground.TryGetComponent<MeshRenderer>(out var groundRenderer))
+            {
+                groundRenderer.sharedMaterial.color = theme.Ground;
+            }
+
+            for (var i = 0; i < 4; i++)
+            {
+                var wall = GameObject.Find($"Wall_{i}");
+                if (wall != null && wall.TryGetComponent<MeshRenderer>(out var wallRenderer))
+                {
+                    wallRenderer.sharedMaterial.color = theme.Wall;
+                }
+            }
+        }
+
         private void BuyMarketing()
         {
             var cost = GuestFlow.NextMarketingCost(state.MarketingLevel);
@@ -438,14 +467,14 @@ namespace RestaurantIdle.Game
         }
 
         /// <summary>
-        /// Renovierung (PLANv2.md Abschnitt 1.1/7): Reset der laufenden
+        /// Renovierung (PLANv2.md Abschnitt 1.1/7/10): Reset der laufenden
         /// Runde gegen Renovierungspunkte -- mathematisch identisch zum
         /// urspruenglichen Michelin-Sterne-Prestige (PLAN.md Phase 6), nur
         /// umgedeutet. Lifetime-Umsatz bleibt bewusst erhalten -- die
         /// Punkte-Formel rechnet auf dem kumulierten Gesamtwert, nicht auf
-        /// einem pro-Run-Wert (siehe Prestige.StarsGainedFromReset). Ein
-        /// sichtbarer Ortswechsel (neue Location statt nur Zahlen-Reset)
-        /// folgt in Phase 10, hier erstmal nur das Wording.
+        /// einem pro-Run-Wert (siehe Prestige.StarsGainedFromReset). Erhoeht
+        /// zusaetzlich den Location-Index und faerbt Boden/Waende um --
+        /// macht die Renovierung sichtbar statt nur eine Zahl zurueckzusetzen.
         /// </summary>
         private void PrestigeReset()
         {
@@ -460,9 +489,19 @@ namespace RestaurantIdle.Game
             state.RevenueString = revenue.ToString();
             state.MarketingLevel = 0;
             state.Stations = new List<Station>();
+            state.CurrentLocation = Mathf.Min(state.CurrentLocation + 1, LocationTheme.MaxIndex);
             // Gibt wie beim allerersten Start die erste Station gratis --
             // sonst waere nach dem Reset buchstaeblich kein Kauf mehr moeglich.
             SaveSystem.Normalize(state);
+            ApplyLocationTheme();
+
+            // Alte Personal-Figuren gehoeren zu Stationen, die soeben
+            // zurueckgesetzt wurden -- ohne Aufraeumen wuerden sie verwaist
+            // weiter herumwippen.
+            foreach (var staff in FindObjectsByType<StaffWorker>(FindObjectsSortMode.None))
+            {
+                Destroy(staff.gameObject);
+            }
 
             RefreshUi();
             FlashHeader();
@@ -521,7 +560,8 @@ namespace RestaurantIdle.Game
             var factor = CurrentCapacityFactor();
             var marketingCost = GuestFlow.NextMarketingCost(state.MarketingLevel);
 
-            headerLabel.text = $"Umsatz: {NumberFormat.Format(revenue)}\nLifetime: {NumberFormat.Format(lifetimeRevenue)}"
+            headerLabel.text = $"{LocationTheme.For(state.CurrentLocation).Name}"
+                + $"\nUmsatz: {NumberFormat.Format(revenue)}\nLifetime: {NumberFormat.Format(lifetimeRevenue)}"
                 + $"\nGaestestrom: {NumberFormat.Format(guestFlow)}  (Auslastung: {factor:P0} von {NumberFormat.Format(potential)}/s)"
                 + $"\nMarketing Stufe {state.MarketingLevel} -- naechste Stufe: {NumberFormat.Format(marketingCost)}";
             marketingButtonRef.interactable = revenue >= marketingCost;

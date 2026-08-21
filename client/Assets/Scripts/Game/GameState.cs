@@ -17,5 +17,13 @@ namespace RestaurantIdle.Game
         public List<Station> Stations = new();
         public int MarketingLevel;
         public long LastSavedAtUnixSeconds;
+
+        /// <summary>
+        /// PLANv2.md Abschnitt 1.1/6/10: Location-Index (0 = Limonadenstand,
+        /// bis 4 = Restaurant). Steigt bei jeder Renovierung, gedeckelt bei
+        /// der letzten Stufe -- Renovierungspunkte laufen darueber hinaus
+        /// weiter, aber es gibt keinen sichtbaren Ortswechsel mehr.
+        /// </summary>
+        public int CurrentLocation;
     }
 }
