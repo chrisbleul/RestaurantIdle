@@ -383,10 +383,14 @@ namespace RestaurantIdle.Game
         }
 
         /// <summary>
-        /// Reset der laufenden Runde gegen Michelin-Sterne (PLAN.md Abschnitt
-        /// 1/2/7, Phase 6). Lifetime-Umsatz bleibt bewusst erhalten -- die
-        /// Sterne-Formel rechnet auf dem kumulierten Gesamtwert, nicht auf
-        /// einem pro-Run-Wert (siehe Prestige.StarsGainedFromReset).
+        /// Renovierung (PLANv2.md Abschnitt 1.1/7): Reset der laufenden
+        /// Runde gegen Renovierungspunkte -- mathematisch identisch zum
+        /// urspruenglichen Michelin-Sterne-Prestige (PLAN.md Phase 6), nur
+        /// umgedeutet. Lifetime-Umsatz bleibt bewusst erhalten -- die
+        /// Punkte-Formel rechnet auf dem kumulierten Gesamtwert, nicht auf
+        /// einem pro-Run-Wert (siehe Prestige.StarsGainedFromReset). Ein
+        /// sichtbarer Ortswechsel (neue Location statt nur Zahlen-Reset)
+        /// folgt in Phase 10, hier erstmal nur das Wording.
         /// </summary>
         private void PrestigeReset()
         {
@@ -468,7 +472,7 @@ namespace RestaurantIdle.Game
             marketingButtonRef.interactable = revenue >= marketingCost;
 
             var prestigeGain = Prestige.StarsGainedFromReset(lifetimeRevenue, PrestigeK, prestigeStars);
-            prestigeLabel.text = $"Michelin-Sterne: {prestigeStars}\nReset bringt: +{prestigeGain}";
+            prestigeLabel.text = $"Renovierungspunkte: {prestigeStars}\nNaechste Renovierung bringt: +{prestigeGain}";
             prestigeButtonRef.interactable = prestigeGain > BigDouble.Zero;
 
             for (var i = 0; i < rows.Count; i++)
@@ -562,7 +566,7 @@ namespace RestaurantIdle.Game
             headerLabel = CreateLabel(contentGo.transform, preferredHeight: 130);
             marketingButtonRef = CreateButton(contentGo.transform, "Marketing kaufen", BuyMarketing, preferredHeight: 70);
             prestigeLabel = CreateLabel(contentGo.transform, preferredHeight: 80);
-            prestigeButtonRef = CreateButton(contentGo.transform, "Neustart fuer Michelin-Sterne", PrestigeReset, preferredHeight: 70);
+            prestigeButtonRef = CreateButton(contentGo.transform, "Renovieren", PrestigeReset, preferredHeight: 70);
 
             for (var i = 0; i < StationCatalog.All.Count; i++)
             {
