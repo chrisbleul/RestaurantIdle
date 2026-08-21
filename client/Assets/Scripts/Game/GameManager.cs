@@ -63,6 +63,33 @@ namespace RestaurantIdle.Game
         // aus den StationHotspot-Objekten in der Szene aufgebaut.
         private readonly Dictionary<int, Vector3> stationWorldPositions = new();
 
+        /// <summary>
+        /// PLANv3.md K2-Umbau: Geld entsteht ausschliesslich beim Servieren
+        /// eines echten Gastes -- diese Zuordnung IST die Theke jeder
+        /// Station. Hoechstens ein Eintrag pro Stations-Index (kein
+        /// gleichzeitiges Bedienen mehrerer Gaeste an derselben Station ohne
+        /// echtes Raumlayout/Warteschlange, siehe PLANv3 Phase C/E). Ein
+        /// Eintrag existiert bereits ab dem Spawn (Reservierung), nicht erst
+        /// ab Ankunft -- sonst koennten zwei Gaeste gleichzeitig zur selben
+        /// freien Station laufen.
+        /// </summary>
+        private class GuestVisit
+        {
+            public GuestMover Mover;
+            public float PatienceRemaining;
+        }
+
+        // PLANv3.md K2: Geduld muss mindestens eine volle Zykluszeit der
+        // Zielstation abdecken (+ Puffer) -- sonst wuerden Gaeste an
+        // langsamen Stationen (z.B. Chef's Table: 900s Basis-Zyklus) JEDES
+        // Mal gehen, bevor ein Manager ueberhaupt fertig servieren kann.
+        // GuestPatienceSeconds bleibt die Untergrenze fuer schnelle
+        // Stationen (Kaffeemaschine: 2s), damit dort trotzdem genug Zeit
+        // fuer einen manuellen Tap bleibt.
+        private const float GuestPatienceSeconds = 12f;
+        private const float GuestPatienceBufferSeconds = 3f;
+        private readonly Dictionary<int, GuestVisit> guestAtStation = new();
+
         // InitializeGame() laedt asynchron (Backend-Request ueber mehrere Frames)
         // -- Update() etc. laufen aber schon ab dem ersten Frame und wuerden ohne
         // dieses Flag mit NullReferenceException auf "state" abstuerzen, bevor
@@ -152,6 +179,7 @@ namespace RestaurantIdle.Game
             isInitialized = true;
         }
 
+        /// <summary>Theoretische Produktionskapazitaet, wenn jede Station mit Manager ununterbrochen bedient wuerde -- nur noch fuer die Offline-Naeherung (OfflineCapacityFactor) relevant, siehe PLANv3 K2.</summary>
         private BigDouble SumManagedYieldPerSecond()
         {
             var total = BigDouble.Zero;
@@ -166,7 +194,16 @@ namespace RestaurantIdle.Game
             return total;
         }
 
-        private double CurrentCapacityFactor() =>
+        /// <summary>
+        /// PLANv3.md K2: im Live-Betrieb entsteht Geld jetzt ausschliesslich
+        /// beim Servieren eines echten GuestMover-Objekts (siehe
+        /// UpdateGuestVisits/ProduceNow) -- GuestFlow.CapacityFactor spielt
+        /// dort keine Rolle mehr. Fuer Offline-Ertrag (ApplyOfflineEarnings)
+        /// ist eine echte Gast-fuer-Gast-Simulation ueber Stunden hinweg nicht
+        /// praktikabel; dort bleibt CapacityFactor als aggregierte Schaetzung
+        /// (Produktionskapazitaet vs. Gaestestrom) die ehrliche Naeherung.
+        /// </summary>
+        private double OfflineCapacityFactor() =>
             GuestFlow.CapacityFactor(SumManagedYieldPerSecond(), GuestFlow.GuestFlowAt(state.MarketingLevel));
 
         /// <summary>
@@ -185,7 +222,7 @@ namespace RestaurantIdle.Game
                 return;
             }
 
-            var effectivePerSecond = SumManagedYieldPerSecond() * CurrentCapacityFactor() * PrestigeMultiplier();
+            var effectivePerSecond = SumManagedYieldPerSecond() * OfflineCapacityFactor() * PrestigeMultiplier();
             var earned = OfflineEarnings.Calculate(effectivePerSecond, offlineDuration);
             if (earned > BigDouble.Zero)
             {
@@ -222,21 +259,7 @@ namespace RestaurantIdle.Game
 
             HandleStationTap();
             UpdateGuestSpawner();
-
-            var factor = CurrentCapacityFactor();
-            var earnedThisFrame = BigDouble.Zero;
-
-            for (var i = 0; i < state.Stations.Count; i++)
-            {
-                earnedThisFrame += state.Stations[i].Tick(StationCatalog.All[i], Time.deltaTime);
-            }
-
-            if (earnedThisFrame > BigDouble.Zero)
-            {
-                var effective = earnedThisFrame * factor * PrestigeMultiplier();
-                revenue += effective;
-                lifetimeRevenue += effective;
-            }
+            UpdateGuestVisits();
 
             uiRefreshTimer += Time.deltaTime;
             if (uiRefreshTimer >= UiRefreshIntervalSeconds)
@@ -250,6 +273,77 @@ namespace RestaurantIdle.Game
             {
                 timeSinceLastSync = 0f;
                 Persist();
+            }
+        }
+
+        /// <summary>
+        /// PLANv3.md K2: Kernstueck der Auftragskette. Fuer jede Station mit
+        /// wartendem Gast entweder automatisch bedienen (Manager -> Tick())
+        /// oder die Geduld herunterzaehlen, bis entweder ein manueller Tap
+        /// (ProduceNow) den Gast bedient oder die Geduld ablaeuft (Gast geht
+        /// unbedient). Ohne wartenden Gast passiert an einer Station schlicht
+        /// nichts -- das ist der ganze Punkt von K2.
+        /// </summary>
+        private void UpdateGuestVisits()
+        {
+            List<int> finished = null;
+
+            foreach (var kvp in guestAtStation)
+            {
+                var stationIndex = kvp.Key;
+                var visit = kvp.Value;
+
+                if (visit.Mover == null)
+                {
+                    (finished ??= new List<int>()).Add(stationIndex);
+                    continue;
+                }
+
+                if (!visit.Mover.HasArrivedAtStation)
+                {
+                    continue; // noch unterwegs -- Geduld laeuft erst ab Ankunft an der Station.
+                }
+
+                var station = state.Stations[stationIndex];
+                var def = StationCatalog.All[stationIndex];
+
+                if (station.HasManager)
+                {
+                    var earned = station.Tick(def, Time.deltaTime);
+                    if (earned > BigDouble.Zero)
+                    {
+                        var effective = earned * PrestigeMultiplier();
+                        revenue += effective;
+                        lifetimeRevenue += effective;
+
+                        visit.Mover.Leave();
+                        (finished ??= new List<int>()).Add(stationIndex);
+
+                        if (stationWorldPositions.TryGetValue(stationIndex, out var burstPos))
+                        {
+                            CoinBurst.SpawnAt(burstPos);
+                        }
+
+                        continue;
+                    }
+                }
+
+                visit.PatienceRemaining -= Time.deltaTime;
+                if (visit.PatienceRemaining <= 0f)
+                {
+                    visit.Mover.Leave();
+                    (finished ??= new List<int>()).Add(stationIndex);
+                }
+            }
+
+            if (finished == null)
+            {
+                return;
+            }
+
+            foreach (var stationIndex in finished)
+            {
+                guestAtStation.Remove(stationIndex);
             }
         }
 
@@ -332,15 +426,20 @@ namespace RestaurantIdle.Game
         }
 
         /// <summary>
-        /// Ziel ist eine zufaellige *besessene* Station statt eines festen
-        /// Punkts (PLANv2.md Abschnitt 9: "Eingang -> Warteschlange -> Theke
-        /// -> Ausgang") -- damit haengt auch das Wegziel am echten
-        /// Spielfortschritt, nicht nur die Spawn-Rate. Ohne besessene
-        /// Station (ganz am Anfang) laeuft der Gast einfach quer durch.
+        /// PLANv3.md K2: Ziel ist jetzt eine freigeschaltete Station OHNE
+        /// aktuell wartenden Gast -- ein Gast reserviert seinen Zielplatz
+        /// bereits beim Spawn (nicht erst bei Ankunft), sonst koennten zwei
+        /// Gaeste gleichzeitig zur selben freien Station loslaufen. Findet
+        /// sich keine freie Station (keine freigeschaltet, oder alle
+        /// belegt), dreht der Gast sichtbar am Eingang ab, statt unsichtbar
+        /// verworfen zu werden -- macht die emergente Kapazitaetsgrenze
+        /// ("Schlange wird zu lang -> Gaeste gehen") sichtbar, ohne eine
+        /// echte Warteschlangen-Visualisierung (Raumlayout, PLANv3 Phase E)
+        /// zu brauchen.
         /// </summary>
         private void SpawnGuest()
         {
-            var stationPosition = PickOwnedStationPosition() ?? Vector3.Lerp(GuestEntrance, GuestExit, 0.5f);
+            var stationIndex = PickAvailableStationIndex();
 
             var guest = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             guest.name = "Guest";
@@ -357,27 +456,34 @@ namespace RestaurantIdle.Game
             };
 
             var mover = guest.AddComponent<GuestMover>();
-            mover.Init(GuestEntrance, stationPosition, GuestExit);
+
+            if (stationIndex.HasValue && stationWorldPositions.TryGetValue(stationIndex.Value, out var targetPosition))
+            {
+                mover.Init(GuestEntrance, targetPosition, GuestExit, waitsForService: true);
+                var station = state.Stations[stationIndex.Value];
+                var cycleSeconds = (float)station.CycleSeconds(StationCatalog.All[stationIndex.Value]);
+                var patience = Mathf.Max(GuestPatienceSeconds, cycleSeconds + GuestPatienceBufferSeconds);
+                guestAtStation[stationIndex.Value] = new GuestVisit { Mover = mover, PatienceRemaining = patience };
+            }
+            else
+            {
+                var bouncePoint = Vector3.Lerp(GuestEntrance, GuestExit, 0.15f);
+                mover.Init(GuestEntrance, bouncePoint, GuestExit, waitsForService: false);
+            }
         }
 
-        private Vector3? PickOwnedStationPosition()
+        private int? PickAvailableStationIndex()
         {
-            var ownedIndices = new List<int>();
+            var candidates = new List<int>();
             for (var i = 0; i < state.Stations.Count; i++)
             {
-                if (state.Stations[i].IsUnlocked && stationWorldPositions.ContainsKey(i))
+                if (state.Stations[i].IsUnlocked && !guestAtStation.ContainsKey(i) && stationWorldPositions.ContainsKey(i))
                 {
-                    ownedIndices.Add(i);
+                    candidates.Add(i);
                 }
             }
 
-            if (ownedIndices.Count == 0)
-            {
-                return null;
-            }
-
-            var chosen = ownedIndices[UnityEngine.Random.Range(0, ownedIndices.Count)];
-            return stationWorldPositions[chosen];
+            return candidates.Count == 0 ? null : candidates[UnityEngine.Random.Range(0, candidates.Count)];
         }
 
         private void OnApplicationQuit()
@@ -424,20 +530,33 @@ namespace RestaurantIdle.Game
             }
         }
 
+        /// <summary>
+        /// PLANv3.md K2: manuelles Antippen bezahlt nur noch aus, wenn hier
+        /// tatsaechlich ein Gast wartet -- vorher war das ein von Gaesten
+        /// komplett unabhaengiger Geld-Button.
+        /// </summary>
         private void ProduceNow(int i, Vector3? burstPosition = null)
         {
+            if (!guestAtStation.TryGetValue(i, out var visit) || visit.Mover == null || !visit.Mover.HasArrivedAtStation)
+            {
+                return;
+            }
+
             var earned = state.Stations[i].ProduceNow(StationCatalog.All[i]);
             if (earned <= BigDouble.Zero)
             {
                 return;
             }
 
-            var effective = earned * CurrentCapacityFactor() * PrestigeMultiplier();
+            var effective = earned * PrestigeMultiplier();
             revenue += effective;
             lifetimeRevenue += effective;
             RefreshUi();
             FlashHeader();
             PlaySfx("sfx-produce");
+
+            visit.Mover.Leave();
+            guestAtStation.Remove(i);
 
             var position = burstPosition ?? (stationWorldPositions.TryGetValue(i, out var pos) ? pos : (Vector3?)null);
             if (position.HasValue)
@@ -685,13 +804,19 @@ namespace RestaurantIdle.Game
         private void RefreshUi()
         {
             var guestFlow = GuestFlow.GuestFlowAt(state.MarketingLevel);
-            var potential = SumManagedYieldPerSecond();
-            var factor = CurrentCapacityFactor();
             var marketingCost = GuestFlow.NextMarketingCost(state.MarketingLevel);
+            var unlockedCount = 0;
+            foreach (var s in state.Stations)
+            {
+                if (s.IsUnlocked)
+                {
+                    unlockedCount++;
+                }
+            }
 
             headerLabel.text = $"{LocationTheme.For(state.CurrentLocation).Name}"
                 + $"\nUmsatz: {NumberFormat.Format(revenue)}\nLifetime: {NumberFormat.Format(lifetimeRevenue)}"
-                + $"\nGaestestrom: {NumberFormat.Format(guestFlow)}  (Auslastung: {factor:P0} von {NumberFormat.Format(potential)}/s)"
+                + $"\nGaestestrom: {NumberFormat.Format(guestFlow)}  (Stationen belegt: {guestAtStation.Count}/{unlockedCount})"
                 + $"\nMarketing Stufe {state.MarketingLevel} -- naechste Stufe: {NumberFormat.Format(marketingCost)}";
             marketingButtonRef.interactable = revenue >= marketingCost;
 

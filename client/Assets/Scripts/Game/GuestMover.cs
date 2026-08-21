@@ -3,59 +3,83 @@ using UnityEngine;
 namespace RestaurantIdle.Game
 {
     /// <summary>
-    /// Bewegt einen Gast durch feste Wegpunkte: Eingang -> Station (mit
-    /// Wartepause) -> Ausgang (PLANv2.md Abschnitt 9: "Wegfindung Eingang ->
-    /// Warteschlange -> Theke -> Ausgang"). Kein echtes NavMesh/Pfadfinden --
-    /// eine statische, kleine Location braucht dafuer keine Graphensuche,
-    /// direkte Zielpunkte reichen.
+    /// Bewegt einen Gast durch feste Wegpunkte: Eingang -> Station -> Ausgang.
+    /// Kein echtes NavMesh/Pfadfinden -- eine statische, kleine Location
+    /// braucht dafuer keine Graphensuche, direkte Zielpunkte reichen.
+    ///
+    /// PLANv3.md K2-Umbau: die eigentliche Auftragskette (bedient? wie lange
+    /// gewartet? bezahlt?) orchestriert GameManager -- dieses Skript kennt nur
+    /// Bewegung und die beiden Zustaende "laeuft" und "wartet", nicht WARUM
+    /// es wartet oder WIE LANGE. Frueher hatte GuestMover einen eigenen festen
+    /// Warte-Timer und lief danach automatisch weiter; das war der Kern des
+    /// K2-Befunds ("Gast beruehrt nichts") und ist deshalb ersatzlos raus --
+    /// GameManager beendet die Wartephase jetzt explizit ueber Leave(),
+    /// entweder weil ein Verkauf stattgefunden hat oder weil die Geduld
+    /// (GameManager.GuestPatienceSeconds) abgelaufen ist.
     /// </summary>
     public class GuestMover : MonoBehaviour
     {
         private const float MoveSpeed = 1.8f;
-        private const float WaitSecondsAtStation = 1.2f;
         private const float ArrivalThreshold = 0.05f;
 
-        private enum Phase
+        public enum Phase
         {
             WalkingToStation,
             Waiting,
             WalkingToExit,
         }
 
+        public Phase CurrentPhase { get; private set; }
+
+        /// <summary>True, sobald die Zielposition (Station oder Abbiegepunkt bei "kein Platz frei") erreicht ist.</summary>
+        public bool HasArrivedAtStation { get; private set; }
+
         private Vector3 stationPosition;
         private Vector3 exitPosition;
-        private Phase phase;
-        private float waitTimer;
+        private bool waitsForService;
 
-        public void Init(Vector3 entrancePosition, Vector3 stationPos, Vector3 exitPos)
+        /// <param name="waitsForService">
+        /// true: echter Stationsbesuch, Gast bleibt nach Ankunft in Phase
+        /// "Waiting", bis GameManager Leave() ruft (bedient oder Geduld
+        /// abgelaufen). false: kein Platz frei (PLANv3 K2) -- der Gast laeuft
+        /// nur bis zu einem Abbiegepunkt und dreht sofort sichtbar ab, ohne
+        /// dass GameManager ihn extra verwalten muss.
+        /// </param>
+        public void Init(Vector3 entrancePosition, Vector3 stationPos, Vector3 exitPos, bool waitsForService)
         {
             transform.position = entrancePosition;
             stationPosition = stationPos;
             exitPosition = exitPos;
-            phase = Phase.WalkingToStation;
+            this.waitsForService = waitsForService;
+            CurrentPhase = Phase.WalkingToStation;
+            HasArrivedAtStation = false;
+        }
+
+        /// <summary>Beendet die Wartephase -- bedient (Served) oder unbedient (Geduld abgelaufen). No-op, wenn der Gast noch unterwegs oder schon auf dem Weg raus ist.</summary>
+        public void Leave()
+        {
+            if (CurrentPhase == Phase.Waiting)
+            {
+                CurrentPhase = Phase.WalkingToExit;
+            }
         }
 
         private void Update()
         {
-            switch (phase)
+            switch (CurrentPhase)
             {
                 case Phase.WalkingToStation:
                     MoveToward(stationPosition);
                     if (Reached(stationPosition))
                     {
-                        phase = Phase.Waiting;
-                        waitTimer = WaitSecondsAtStation;
+                        HasArrivedAtStation = true;
+                        CurrentPhase = waitsForService ? Phase.Waiting : Phase.WalkingToExit;
                     }
 
                     break;
 
                 case Phase.Waiting:
-                    waitTimer -= Time.deltaTime;
-                    if (waitTimer <= 0f)
-                    {
-                        phase = Phase.WalkingToExit;
-                    }
-
+                    // Wird extern beendet, siehe Leave().
                     break;
 
                 case Phase.WalkingToExit:
