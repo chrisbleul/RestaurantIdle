@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using BalancingCore;
 using BreakInfinity;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace RestaurantIdle.Game
@@ -173,6 +174,8 @@ namespace RestaurantIdle.Game
                 return;
             }
 
+            HandleStationTap();
+
             var factor = CurrentCapacityFactor();
             var earnedThisFrame = BigDouble.Zero;
 
@@ -194,6 +197,32 @@ namespace RestaurantIdle.Game
             {
                 timeSinceLastSync = 0f;
                 Persist();
+            }
+        }
+
+        /// <summary>
+        /// Tap-Layer (PLANv2.md Abschnitt 1.3): Klick auf eine Station in der
+        /// 3D-Szene loest denselben ProduceNow-Effekt aus wie der
+        /// "Produzieren"-Button in der Liste. EventSystem-Check zuerst,
+        /// damit Klicks auf die UI (untere Bildschirmhaelfte) nicht
+        /// zusaetzlich einen 3D-Raycast auf die Szene ausloesen.
+        /// </summary>
+        private void HandleStationTap()
+        {
+            if (!Input.GetMouseButtonDown(0) || EventSystem.current.IsPointerOverGameObject())
+            {
+                return;
+            }
+
+            if (Camera.main == null)
+            {
+                return;
+            }
+
+            var ray = Camera.main.ScreenPointToRay(Input.mousePosition);
+            if (Physics.Raycast(ray, out var hit) && hit.collider.TryGetComponent<StationHotspot>(out var hotspot))
+            {
+                ProduceNow(hotspot.StationIndex);
             }
         }
 

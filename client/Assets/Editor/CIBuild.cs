@@ -140,7 +140,7 @@ namespace RestaurantIdle.Editor
             // ungefaehr mittig ueber der Theke (deren eigener Mittelpunkt
             // liegt bei x=0.54/z=0.26 relativ zum Eck-Pivot).
             InstantiateModel("Assets/Models/Furniture/kitchenCoffeeMachine.fbx", "Station_Kaffeemaschine",
-                new Vector3(0.5f, 1.05f, 0.25f), Quaternion.identity, FurnitureScale);
+                new Vector3(0.5f, 1.05f, 0.25f), Quaternion.identity, FurnitureScale, stationIndex: 0);
 
             InstantiateModel("Assets/Models/Furniture/stoolBar.fbx", "Hocker",
                 new Vector3(0.5f, 0f, -0.6f), Quaternion.identity, FurnitureScale);
@@ -164,11 +164,12 @@ namespace RestaurantIdle.Editor
                 var (model, stationName) = remainingStations[i];
                 var x = 1.6f + i * 0.85f;
                 InstantiateModel($"Assets/Models/Furniture/{model}", $"Station_{stationName}",
-                    new Vector3(x, 0f, 0f), Quaternion.identity, FurnitureScale);
+                    new Vector3(x, 0f, 0f), Quaternion.identity, FurnitureScale, stationIndex: i + 1);
             }
         }
 
-        private static void InstantiateModel(string assetPath, string instanceName, Vector3 position, Quaternion rotation, float scale = 1f)
+        private static void InstantiateModel(string assetPath, string instanceName, Vector3 position, Quaternion rotation,
+            float scale = 1f, int? stationIndex = null)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
             if (prefab == null)
@@ -182,6 +183,17 @@ namespace RestaurantIdle.Editor
             instance.transform.position = position;
             instance.transform.rotation = rotation;
             instance.transform.localScale = Vector3.one * scale;
+
+            if (stationIndex.HasValue)
+            {
+                // MeshCollider statt BoxCollider -- passt sich automatisch
+                // der tatsaechlichen Modellform an, kein manuelles Vermessen
+                // noetig (reicht fuer reines Raycast-Antippen, siehe
+                // GameManager.HandleStationTap).
+                instance.AddComponent<MeshCollider>();
+                var hotspot = instance.AddComponent<StationHotspot>();
+                hotspot.StationIndex = stationIndex.Value;
+            }
         }
     }
 
