@@ -484,13 +484,13 @@ namespace RestaurantIdle.Game
             var factor = CurrentCapacityFactor();
             var marketingCost = GuestFlow.NextMarketingCost(state.MarketingLevel);
 
-            headerLabel.text = $"Umsatz: {revenue}\nLifetime: {lifetimeRevenue}"
-                + $"\nGaestestrom: {guestFlow}  (Auslastung: {factor:P0} von {potential}/s)"
-                + $"\nMarketing Stufe {state.MarketingLevel} -- naechste Stufe: {marketingCost}";
+            headerLabel.text = $"Umsatz: {NumberFormat.Format(revenue)}\nLifetime: {NumberFormat.Format(lifetimeRevenue)}"
+                + $"\nGaestestrom: {NumberFormat.Format(guestFlow)}  (Auslastung: {factor:P0} von {NumberFormat.Format(potential)}/s)"
+                + $"\nMarketing Stufe {state.MarketingLevel} -- naechste Stufe: {NumberFormat.Format(marketingCost)}";
             marketingButtonRef.interactable = revenue >= marketingCost;
 
             var prestigeGain = Prestige.StarsGainedFromReset(lifetimeRevenue, PrestigeK, prestigeStars);
-            prestigeLabel.text = $"Renovierungspunkte: {prestigeStars}\nNaechste Renovierung bringt: +{prestigeGain}";
+            prestigeLabel.text = $"Renovierungspunkte: {NumberFormat.Format(prestigeStars)}\nNaechste Renovierung bringt: +{NumberFormat.Format(prestigeGain)}";
             prestigeButtonRef.interactable = prestigeGain > BigDouble.Zero;
 
             for (var i = 0; i < rows.Count; i++)
@@ -500,8 +500,8 @@ namespace RestaurantIdle.Game
                 var row = rows[i];
 
                 row.Label.text = $"{def.Name}: {station.OwnedCount}x"
-                    + $"\nKosten: {station.NextCost(def)}  |  Ertrag/Zyklus: {station.YieldPerCycle(def)} ({def.CycleSeconds}s)"
-                    + (station.HasManager ? "\nManager: aktiv" : $"\nManager: {def.ManagerCost}");
+                    + $"\nKosten: {NumberFormat.Format(station.NextCost(def))}  |  Ertrag/Zyklus: {NumberFormat.Format(station.YieldPerCycle(def))} ({def.CycleSeconds}s)"
+                    + (station.HasManager ? "\nManager: aktiv" : $"\nManager: {NumberFormat.Format(def.ManagerCost)}");
 
                 row.BuyButton.interactable = revenue >= station.NextCost(def);
                 row.ManagerButton.gameObject.SetActive(!station.HasManager);
