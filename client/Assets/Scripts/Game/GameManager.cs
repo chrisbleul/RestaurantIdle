@@ -21,6 +21,20 @@ namespace RestaurantIdle.Game
         // ~1 Std. lohnt", muss im Playtest kalibriert werden (siehe Prestige.cs).
         private const double PrestigeK = 1.0;
 
+        // Icons aus dem Kenney Food Kit (CC0, Assets/Resources/Icons/) --
+        // Reihenfolge muss zu StationCatalog.All passen (Kaffeemaschine,
+        // Fritteuse, Grill, Pizzaofen, Sushi-Bar, Patisserie, Chef's Table).
+        private static readonly string[] StationIconNames =
+        {
+            "station-kaffeemaschine",
+            "station-fritteuse",
+            "station-grill",
+            "station-pizzaofen",
+            "station-sushibar",
+            "station-patisserie",
+            "station-chefstable",
+        };
+
         private GameState state;
         private BigDouble revenue;
         private BigDouble lifetimeRevenue;
@@ -447,7 +461,8 @@ namespace RestaurantIdle.Game
             for (var i = 0; i < StationCatalog.All.Count; i++)
             {
                 var index = i; // lokale Kopie fuer die Closures unten
-                var label = CreateLabel(contentGo.transform, preferredHeight: 80);
+                var icon = Resources.Load<Sprite>($"Icons/{StationIconNames[index]}");
+                var label = CreateStationHeader(contentGo.transform, icon, preferredHeight: 80);
                 var buyButton = CreateButton(contentGo.transform, "Kaufen", () => BuyStation(index), preferredHeight: 60);
                 var produceButton = CreateButton(contentGo.transform, "Produzieren", () => ProduceNow(index), preferredHeight: 60);
                 var managerButton = CreateButton(contentGo.transform, "Manager", () => BuyManager(index), preferredHeight: 60);
@@ -487,6 +502,44 @@ namespace RestaurantIdle.Game
             layoutElement.flexibleWidth = 1;
 
             return text;
+        }
+
+        /// <summary>
+        /// Wie CreateLabel, aber mit optionalem quadratischem Icon links
+        /// daneben (Kenney Food Kit, Assets/Resources/Icons) -- fuer die
+        /// Stationszeilen. icon darf null sein (z.B. Icon-PNG fehlt), dann
+        /// verhaelt es sich wie eine reine Textzeile.
+        /// </summary>
+        private static Text CreateStationHeader(Transform parent, Sprite icon, float preferredHeight)
+        {
+            var rowGo = new GameObject("StationHeader", typeof(HorizontalLayoutGroup), typeof(LayoutElement));
+            rowGo.transform.SetParent(parent, false);
+
+            var rowLayoutGroup = rowGo.GetComponent<HorizontalLayoutGroup>();
+            rowLayoutGroup.spacing = 12;
+            rowLayoutGroup.childAlignment = TextAnchor.MiddleLeft;
+            rowLayoutGroup.childForceExpandWidth = false;
+            rowLayoutGroup.childForceExpandHeight = true;
+            rowLayoutGroup.childControlWidth = true;
+            rowLayoutGroup.childControlHeight = true;
+
+            var rowLayoutElement = rowGo.GetComponent<LayoutElement>();
+            rowLayoutElement.preferredHeight = preferredHeight;
+            rowLayoutElement.flexibleWidth = 1;
+
+            if (icon != null)
+            {
+                var iconGo = new GameObject("Icon", typeof(Image), typeof(LayoutElement));
+                iconGo.transform.SetParent(rowGo.transform, false);
+                var iconImage = iconGo.GetComponent<Image>();
+                iconImage.sprite = icon;
+                iconImage.preserveAspect = true;
+                var iconLayoutElement = iconGo.GetComponent<LayoutElement>();
+                iconLayoutElement.preferredWidth = preferredHeight;
+                iconLayoutElement.flexibleWidth = 0;
+            }
+
+            return CreateLabel(rowGo.transform, preferredHeight);
         }
 
         private static Button CreateButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick, float preferredHeight)
