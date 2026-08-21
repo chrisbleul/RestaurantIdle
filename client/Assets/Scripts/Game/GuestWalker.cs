@@ -24,7 +24,12 @@ namespace RestaurantIdle.Game
         private int frameIndex;
         private float frameTimer;
 
-        private void Awake()
+        // Start() statt Awake(): das Guest-GameObject wird per
+        // "new GameObject(..., typeof(GuestWalker))" erzeugt, dessen Awake()
+        // synchron *waehrend* der Konstruktion feuert -- SetParent() auf die
+        // Stage laeuft aber erst danach. transform.parent waere in Awake()
+        // also noch null.
+        private void Start()
         {
             selfRect = (RectTransform)transform;
             stageRect = (RectTransform)transform.parent;
