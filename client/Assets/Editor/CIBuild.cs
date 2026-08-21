@@ -73,7 +73,7 @@ namespace RestaurantIdle.Editor
             // PLANv2.md Abschnitt 4: orthografische Kamera in isometrischem
             // Winkel (ca. 30 Grad Neigung, 45 Grad Drehung) statt der
             // bisherigen reinen UI-Kamera ohne eigenes Rendering.
-            var cameraObject = new GameObject("Main Camera", typeof(Camera));
+            var cameraObject = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener));
             cameraObject.tag = "MainCamera";
             var camera = cameraObject.GetComponent<Camera>();
             camera.orthographic = true;
