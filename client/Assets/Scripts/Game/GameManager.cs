@@ -73,6 +73,9 @@ namespace RestaurantIdle.Game
         /// </summary>
         private readonly Dictionary<int, GameObject> stationGameObjects = new();
 
+        /// <summary>Urspruengliche CIBuild-Skalierung je Station (FurnitureScale) -- Zielgroesse fuer den Pop-In-Effekt beim Freischalten, siehe PopInStation.</summary>
+        private readonly Dictionary<int, Vector3> stationOriginalScale = new();
+
         /// <summary>
         /// PLANv3.md K2-Umbau: Geld entsteht ausschliesslich beim Servieren
         /// eines echten Gastes -- diese Zuordnung IST die Theke jeder
@@ -111,8 +114,10 @@ namespace RestaurantIdle.Game
 
         private Text headerLabel;
         private Button marketingButtonRef;
+        private Image marketingButtonImage;
         private Text prestigeLabel;
         private Button prestigeButtonRef;
+        private Image prestigeButtonImage;
         private readonly List<StationRow> rows = new();
 
         private struct StationRow
@@ -122,8 +127,10 @@ namespace RestaurantIdle.Game
             public Image BuyButtonImage;
             public Text BuyButtonLabel;
             public Button EquipButton;
+            public Image EquipButtonImage;
             public Text EquipButtonLabel;
             public Button ManagerButton;
+            public Image ManagerButtonImage;
         }
 
         // PLANv3.md Phase D ("Kein Tutorial, kein geführter erster Kauf"):
@@ -131,6 +138,12 @@ namespace RestaurantIdle.Game
         // im grauen Einheitsbrei unterzugehen -- billigste Form von
         // Fuehrung ohne echtes Tutorial-System.
         private static readonly Color GuidedButtonColor = new Color(0.98f, 0.75f, 0.25f);
+
+        // Nutzer-Feedback ("macht das Spiel gerade Spass?"): vorher war JEDER
+        // Button exakt dasselbe Grau, leistbar oder nicht -- man musste den
+        // Text lesen, um zu wissen, ob ein Kauf gerade moeglich ist. Gruen/
+        // Grau macht das auf einen Blick sichtbar, ganz ohne neue Assets.
+        private static readonly Color AffordableButtonColor = new Color(0.55f, 0.82f, 0.5f);
         private static readonly Color DefaultButtonColor = new Color(0.8f, 0.8f, 0.8f);
 
         private void Start()
@@ -182,9 +195,10 @@ namespace RestaurantIdle.Game
             {
                 stationWorldPositions[hotspot.StationIndex] = hotspot.transform.position;
                 stationGameObjects[hotspot.StationIndex] = hotspot.gameObject;
+                stationOriginalScale[hotspot.StationIndex] = hotspot.transform.localScale;
             }
 
-            RevealStationsAsNeeded();
+            RevealStationsAsNeeded(animate: false);
 
             for (var i = 0; i < state.Stations.Count; i++)
             {
@@ -284,6 +298,7 @@ namespace RestaurantIdle.Game
             HandleStationTap();
             UpdateGuestSpawner();
             UpdateGuestVisits();
+            ApplyCameraFraming();
 
             uiRefreshTimer += Time.deltaTime;
             if (uiRefreshTimer >= UiRefreshIntervalSeconds)
@@ -449,6 +464,25 @@ namespace RestaurantIdle.Game
         private static readonly Vector3 GuestEntrance = new Vector3(-1.5f, 0.4f, -1.2f);
         private static readonly Vector3 GuestExit = new Vector3(7f, 0.4f, -1.2f);
 
+        /// <summary>
+        /// Nutzer-Feedback ("macht das Spiel gerade Spass?"): die feste
+        /// Kamera aus CIBuild.cs (orthographicSize 4, lookTarget x=2.8)
+        /// zeigt bei sieben Stationen in einer Reihe (Spannweite ~6 Einheiten)
+        /// immer nur einen schmalen Ausschnitt -- man sieht sein eigenes
+        /// Restaurant nie als Ganzes wachsen, gerade das macht den Reiz des
+        /// Genres aus. Kamera faehrt jetzt weich zurueck/zur Seite, je nachdem
+        /// wie viele Stationen freigeschaltet sind (RevealStationsAsNeeded
+        /// liefert dieselbe Sichtbarkeits-Bedingung) -- das Herauszoomen
+        /// selbst wird so nebenbei zu einem kleinen Belohnungsmoment.
+        /// </summary>
+        private const float MinOrthographicSize = 4f;
+        private const float CameraFramingMarginX = 1.4f;
+        private const float CameraFramingLerpSpeed = 1.2f;
+        private const float CameraLookAtY = 0.4f;
+        private static readonly Vector3 CameraBackOffset = new Vector3(0f, 0f, -15f);
+        private float targetOrthoSize = MinOrthographicSize;
+        private float targetLookAtX = 2.8f;
+
         private void UpdateGuestSpawner()
         {
             var guestFlow = GuestFlow.GuestFlowAt(state.MarketingLevel).ToDouble();
@@ -537,7 +571,14 @@ namespace RestaurantIdle.Game
         /// genug (7 Stationen, kein Hot-Path) fuer ein simples Neu-Setzen
         /// statt Delta-Tracking.
         /// </summary>
-        private void RevealStationsAsNeeded()
+        /// <param name="animate">
+        /// false nur beim initialen Laden (InitializeGame) -- bereits
+        /// freigeschaltete Stationen sollen einfach da sein, nicht beim
+        /// Programmstart alle gleichzeitig "reinpoppen". Bei jedem
+        /// spaeteren Aufruf (neue Freischaltung waehrend des Spiels) soll
+        /// der Pop-In-Effekt laufen.
+        /// </param>
+        private void RevealStationsAsNeeded(bool animate = true)
         {
             for (var i = 0; i < state.Stations.Count; i++)
             {
@@ -547,11 +588,107 @@ namespace RestaurantIdle.Game
                 }
 
                 var shouldBeVisible = i == 0 || state.Stations[i - 1].IsUnlocked;
-                if (go.activeSelf != shouldBeVisible)
+                if (go.activeSelf == shouldBeVisible)
                 {
+                    continue;
+                }
+
+                var targetScale = stationOriginalScale.TryGetValue(i, out var scale) ? scale : go.transform.localScale;
+                if (shouldBeVisible && animate)
+                {
+                    StartCoroutine(PopInStation(go, targetScale));
+                }
+                else
+                {
+                    go.transform.localScale = targetScale;
                     go.SetActive(shouldBeVisible);
                 }
             }
+
+            RecomputeCameraTarget();
+        }
+
+        /// <summary>
+        /// Nutzer-Feedback ("macht das Spiel gerade Spass?"): eine neue
+        /// Station tauchte bisher instantan per SetActive(true) auf --
+        /// keinerlei Feiergefuehl fuer den Moment, der eigentlich einer der
+        /// wichtigsten im ganzen Spiel ist. Skaliert von 0 auf die
+        /// urspruengliche CIBuild-Groesse mit leichtem Ueberschwingen
+        /// (Standard-easeOutBack-Formel, kein AnimationCurve-Asset noetig).
+        /// </summary>
+        private IEnumerator PopInStation(GameObject go, Vector3 targetScale)
+        {
+            const float duration = 0.45f;
+            const float c1 = 1.70158f;
+            const float c3 = c1 + 1f;
+
+            go.transform.localScale = Vector3.zero;
+            go.SetActive(true);
+
+            var elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                var t = Mathf.Clamp01(elapsed / duration) - 1f;
+                var eased = 1f + c3 * t * t * t + c1 * t * t;
+                go.transform.localScale = targetScale * eased;
+                yield return null;
+            }
+
+            go.transform.localScale = targetScale;
+        }
+
+        /// <summary>
+        /// Bestimmt Zoom/Position, die die Kamera als naechstes anfahren soll
+        /// (siehe ApplyCameraFraming fuer die tatsaechliche weiche Bewegung
+        /// pro Frame) -- Spannweite aller aktuell sichtbaren Stationen
+        /// (dieselbe Bedingung wie RevealStationsAsNeeded), nicht nur der
+        /// freigeschalteten: der Spieler soll auch die naechste, noch
+        /// gesperrte Station im Blick haben.
+        /// </summary>
+        private void RecomputeCameraTarget()
+        {
+            var minX = float.MaxValue;
+            var maxX = float.MinValue;
+
+            for (var i = 0; i < state.Stations.Count; i++)
+            {
+                var revealed = i == 0 || state.Stations[i - 1].IsUnlocked;
+                if (!revealed || !stationWorldPositions.TryGetValue(i, out var position))
+                {
+                    continue;
+                }
+
+                minX = Mathf.Min(minX, position.x);
+                maxX = Mathf.Max(maxX, position.x);
+            }
+
+            if (minX > maxX)
+            {
+                return;
+            }
+
+            var aspect = Camera.main != null ? Camera.main.aspect : 0.57f;
+            var span = maxX - minX + CameraFramingMarginX;
+            targetOrthoSize = Mathf.Max(MinOrthographicSize, span / (2f * aspect));
+            targetLookAtX = (minX + maxX) / 2f;
+        }
+
+        /// <summary>Weiche Kamerafahrt Richtung targetOrthoSize/targetLookAtX, jeden Frame aus Update() aufgerufen -- siehe RecomputeCameraTarget fuer die Zielwerte.</summary>
+        private void ApplyCameraFraming()
+        {
+            if (Camera.main == null)
+            {
+                return;
+            }
+
+            var cam = Camera.main;
+            var t = Time.deltaTime * CameraFramingLerpSpeed;
+            cam.orthographicSize = Mathf.Lerp(cam.orthographicSize, targetOrthoSize, t);
+
+            var lookTarget = new Vector3(targetLookAtX, CameraLookAtY, 0f);
+            var desiredPosition = lookTarget + cam.transform.rotation * CameraBackOffset;
+            cam.transform.position = Vector3.Lerp(cam.transform.position, desiredPosition, t);
         }
 
         private void OnApplicationQuit()
@@ -938,11 +1075,13 @@ namespace RestaurantIdle.Game
                 + $"\n{nextGoalText}"
                 + $"\nMarketing Stufe {state.MarketingLevel} -- naechste Stufe: {NumberFormat.Format(marketingCost)}";
             marketingButtonRef.interactable = revenue >= marketingCost;
+            marketingButtonImage.color = marketingButtonRef.interactable ? AffordableButtonColor : DefaultButtonColor;
 
             var prestigeGain = Prestige.StarsGainedFromReset(lifetimeRevenue, PrestigeK, prestigeStars);
             prestigeLabel.text = $"Renovierungspunkte: {NumberFormat.Format(prestigeStars)} (x{PrestigeMultiplier():F2} Ertrag)"
                 + $"\nNaechste Renovierung bringt: +{NumberFormat.Format(prestigeGain)}";
             prestigeButtonRef.interactable = prestigeGain > BigDouble.Zero;
+            prestigeButtonImage.color = prestigeButtonRef.interactable ? AffordableButtonColor : DefaultButtonColor;
 
             for (var i = 0; i < rows.Count; i++)
             {
@@ -974,10 +1113,12 @@ namespace RestaurantIdle.Game
 
                     row.BuyButtonLabel.text = $"Preis erhoehen ({NumberFormat.Format(station.NextPriceUpgradeCost(def))})";
                     row.BuyButton.interactable = revenue >= station.NextPriceUpgradeCost(def);
+                    row.BuyButtonImage.color = row.BuyButton.interactable ? AffordableButtonColor : DefaultButtonColor;
 
                     row.EquipButton.gameObject.SetActive(true);
                     row.EquipButtonLabel.text = $"Ausstattung ({NumberFormat.Format(station.NextEquipmentUpgradeCost(def))})";
                     row.EquipButton.interactable = revenue >= station.NextEquipmentUpgradeCost(def);
+                    row.EquipButtonImage.color = row.EquipButton.interactable ? AffordableButtonColor : DefaultButtonColor;
                 }
                 else
                 {
@@ -986,14 +1127,16 @@ namespace RestaurantIdle.Game
 
                     row.BuyButtonLabel.text = "Kaufen";
                     row.BuyButton.interactable = revenue >= station.UnlockCost(def);
+                    row.BuyButtonImage.color = i == 0
+                        ? GuidedButtonColor
+                        : (row.BuyButton.interactable ? AffordableButtonColor : DefaultButtonColor);
 
                     row.EquipButton.gameObject.SetActive(false);
                 }
 
-                row.BuyButtonImage.color = (i == 0 && !station.IsUnlocked) ? GuidedButtonColor : DefaultButtonColor;
-
                 row.ManagerButton.gameObject.SetActive(station.IsUnlocked && !station.HasManager);
                 row.ManagerButton.interactable = revenue >= def.ManagerCost;
+                row.ManagerButtonImage.color = row.ManagerButton.interactable ? AffordableButtonColor : DefaultButtonColor;
             }
         }
 
@@ -1074,8 +1217,10 @@ namespace RestaurantIdle.Game
             // noch mal Platz dazu.
             headerLabel = CreateLabel(contentGo.transform, preferredHeight: 205);
             marketingButtonRef = CreateButton(contentGo.transform, "Marketing kaufen", BuyMarketing, preferredHeight: 70);
+            marketingButtonImage = marketingButtonRef.GetComponent<Image>();
             prestigeLabel = CreateLabel(contentGo.transform, preferredHeight: 80);
             prestigeButtonRef = CreateButton(contentGo.transform, "Renovieren", PrestigeReset, preferredHeight: 70);
+            prestigeButtonImage = prestigeButtonRef.GetComponent<Image>();
 
             for (var i = 0; i < StationCatalog.All.Count; i++)
             {
@@ -1093,8 +1238,10 @@ namespace RestaurantIdle.Game
                     BuyButtonImage = buyButton.GetComponent<Image>(),
                     BuyButtonLabel = buyButton.GetComponentInChildren<Text>(),
                     EquipButton = equipButton,
+                    EquipButtonImage = equipButton.GetComponent<Image>(),
                     EquipButtonLabel = equipButton.GetComponentInChildren<Text>(),
                     ManagerButton = managerButton,
+                    ManagerButtonImage = managerButton.GetComponent<Image>(),
                 });
             }
         }
