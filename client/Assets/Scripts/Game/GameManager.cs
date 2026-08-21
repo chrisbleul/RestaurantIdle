@@ -123,22 +123,6 @@ namespace RestaurantIdle.Game
         private Text prestigeLabel;
         private Button prestigeButtonRef;
         private Image prestigeButtonImage;
-        private readonly List<StationRow> rows = new();
-
-        private struct StationRow
-        {
-            /// <summary>Die ganze Zeile (Icon + Panel), fuers Ein-/Ausblenden -- siehe CreateStationHeader.</summary>
-            public GameObject Row;
-            public Text Label;
-            public Button BuyButton;
-            public Image BuyButtonImage;
-            public Text BuyButtonLabel;
-            public Button EquipButton;
-            public Image EquipButtonImage;
-            public Text EquipButtonLabel;
-            public Button ManagerButton;
-            public Image ManagerButtonImage;
-        }
 
         // PLANv3.md Phase D ("Kein Tutorial, kein geführter erster Kauf"):
         // der allererste Kauf im Spiel bekommt eine auffaellige Farbe statt
@@ -470,9 +454,24 @@ namespace RestaurantIdle.Game
             }
 
             var ray = Camera.main.ScreenPointToRay(screenPosition);
-            if (Physics.Raycast(ray, out var hit) && hit.collider.TryGetComponent<StationHotspot>(out var hotspot))
+            if (!Physics.Raycast(ray, out var hit) || !hit.collider.TryGetComponent<StationHotspot>(out var hotspot))
             {
-                ProduceNow(hotspot.StationIndex, hit.point);
+                return;
+            }
+
+            // Nutzer-Feedback: keine dauerhaften Listen-Buttons mehr fuer
+            // Stationsaktionen -- alles laeuft ueber Antippen der Station
+            // selbst. Wartet dort gerade ein Gast, bedient der Tap ihn
+            // (K2, unveraendert); sonst oeffnet derselbe Tap das Dialogmenu
+            // mit Kaufen/Ausstattung/Manager fuer genau diese Station.
+            var stationIndex = hotspot.StationIndex;
+            if (guestAtStation.TryGetValue(stationIndex, out var visit) && visit.Mover != null && visit.Mover.HasArrivedAtStation)
+            {
+                ProduceNow(stationIndex, hit.point);
+            }
+            else
+            {
+                OpenStationDialog(stationIndex);
             }
         }
 
@@ -1112,62 +1111,6 @@ namespace RestaurantIdle.Game
                 + $"\nNaechste Renovierung bringt: +{NumberFormat.Format(prestigeGain)}";
             prestigeButtonRef.interactable = prestigeGain > BigDouble.Zero;
             prestigeButtonImage.color = prestigeButtonRef.interactable ? AffordableButtonColor : DefaultButtonColor;
-
-            for (var i = 0; i < rows.Count; i++)
-            {
-                var def = StationCatalog.All[i];
-                var station = state.Stations[i];
-                var row = rows[i];
-
-                // PLANv3.md Phase D: dieselbe Staffelung wie in der 3D-Szene
-                // (RevealStationsAsNeeded) -- sonst wuerde die Liste alle
-                // sieben Stationen zeigen, waehrend die Szene nur die
-                // naechste sichtbar macht. Bewusst kein eigener Boolean-
-                // Zustand: die gleiche Bedingung neu auszuwerten ist billig
-                // (7 Stationen) und kann nie aus dem Takt geraten.
-                var isRevealed = i == 0 || state.Stations[i - 1].IsUnlocked;
-                row.Row.SetActive(isRevealed);
-                row.BuyButton.gameObject.SetActive(isRevealed);
-                if (!isRevealed)
-                {
-                    row.EquipButton.gameObject.SetActive(false);
-                    row.ManagerButton.gameObject.SetActive(false);
-                    continue;
-                }
-
-                if (station.IsUnlocked)
-                {
-                    row.Label.text = $"{def.Name}: Preis Lv.{station.PriceLevel} / Ausstattung Lv.{station.EquipmentLevel}"
-                        + $"\nErtrag/Verkauf: {NumberFormat.Format(station.YieldPerSale(def))}  |  Zyklus: {station.CycleSeconds(def):0.0}s"
-                        + (station.HasManager ? "\nManager: aktiv" : $"\nManager: {NumberFormat.Format(def.ManagerCost)}");
-
-                    row.BuyButtonLabel.text = $"Preis erhoehen ({NumberFormat.Format(station.NextPriceUpgradeCost(def))})";
-                    row.BuyButton.interactable = revenue >= station.NextPriceUpgradeCost(def);
-                    row.BuyButtonImage.color = row.BuyButton.interactable ? AffordableButtonColor : DefaultButtonColor;
-
-                    row.EquipButton.gameObject.SetActive(true);
-                    row.EquipButtonLabel.text = $"Ausstattung ({NumberFormat.Format(station.NextEquipmentUpgradeCost(def))})";
-                    row.EquipButton.interactable = revenue >= station.NextEquipmentUpgradeCost(def);
-                    row.EquipButtonImage.color = row.EquipButton.interactable ? AffordableButtonColor : DefaultButtonColor;
-                }
-                else
-                {
-                    row.Label.text = $"{def.Name}: nicht freigeschaltet"
-                        + $"\nFreischalten: {NumberFormat.Format(station.UnlockCost(def))}";
-
-                    row.BuyButtonLabel.text = "Kaufen";
-                    row.BuyButton.interactable = revenue >= station.UnlockCost(def);
-                    row.BuyButtonImage.color = i == 0
-                        ? GuidedButtonColor
-                        : (row.BuyButton.interactable ? AffordableButtonColor : DefaultButtonColor);
-
-                    row.EquipButton.gameObject.SetActive(false);
-                }
-
-                row.ManagerButton.gameObject.SetActive(station.IsUnlocked && !station.HasManager);
-                row.ManagerButton.interactable = revenue >= def.ManagerCost;
-                row.ManagerButtonImage.color = row.ManagerButton.interactable ? AffordableButtonColor : DefaultButtonColor;
-            }
         }
 
         /// <summary>
@@ -1427,6 +1370,148 @@ namespace RestaurantIdle.Game
             SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
         }
 
+        /// <summary>
+        /// Nutzer-Feedback ("Ich bleibe dabei, dass ich die buttons unten
+        /// nicht mehr haben will. Das soll alles ueber Dialogmenues
+        /// geschehen, also durch Klicken"): ersetzt die vorherige
+        /// dauerhafte Kaufen/Ausstattung/Manager-Zeile pro Station in der
+        /// Liste. Ausgeloest durch HandleStationTap, wenn an der
+        /// angetippten Station kein Gast wartet (wartet einer, bedient der
+        /// Tap ihn stattdessen, siehe K2). Kauf-Buttons bauen den Dialog
+        /// bewusst komplett neu auf (Destroy + erneuter Aufruf) statt die
+        /// Werte in-place zu aktualisieren -- einfacher und robuster als
+        /// ein Live-Refresh-Pfad nur fuer diesen einen Dialog.
+        /// </summary>
+        private void OpenStationDialog(int stationIndex)
+        {
+            var canvas = FindFirstObjectByType<Canvas>();
+            if (canvas == null)
+            {
+                return;
+            }
+
+            var def = StationCatalog.All[stationIndex];
+            var station = state.Stations[stationIndex];
+
+            var backdrop = new GameObject("StationDialogBackdrop", typeof(Image));
+            backdrop.transform.SetParent(canvas.transform, false);
+            StretchToFillParent(backdrop.GetComponent<RectTransform>());
+            backdrop.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.65f);
+
+            var panelGo = new GameObject("StationDialogPanel", typeof(Image), typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
+            panelGo.transform.SetParent(backdrop.transform, false);
+            var panelRect = panelGo.GetComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(0.5f, 0.5f);
+            panelRect.anchorMax = new Vector2(0.5f, 0.5f);
+            panelRect.pivot = new Vector2(0.5f, 0.5f);
+            panelRect.sizeDelta = new Vector2(780, 0);
+
+            var panelImage = panelGo.GetComponent<Image>();
+            var panelSprite = Resources.Load<Sprite>("UI/panel-rectangle");
+            if (panelSprite != null)
+            {
+                panelImage.sprite = panelSprite;
+                panelImage.type = Image.Type.Sliced;
+            }
+
+            panelImage.color = Color.white;
+
+            var layout = panelGo.GetComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(40, 32, 40, 40);
+            layout.spacing = 14;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = false;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+            layout.childAlignment = TextAnchor.MiddleCenter;
+
+            panelGo.GetComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+            var titleGo = new GameObject("Title", typeof(Text), typeof(LayoutElement));
+            titleGo.transform.SetParent(panelGo.transform, false);
+            var titleText = titleGo.GetComponent<Text>();
+            titleText.font = Resources.Load<Font>("Fonts/Fredoka");
+            titleText.fontSize = 34;
+            titleText.alignment = TextAnchor.MiddleCenter;
+            titleText.color = Color.black;
+            titleText.text = def.Name;
+            titleGo.GetComponent<LayoutElement>().preferredHeight = 54;
+
+            var icon = Resources.Load<Sprite>($"Icons/{StationIconNames[stationIndex]}");
+            if (icon != null)
+            {
+                var iconGo = new GameObject("Icon", typeof(Image), typeof(LayoutElement));
+                iconGo.transform.SetParent(panelGo.transform, false);
+                var iconImage = iconGo.GetComponent<Image>();
+                iconImage.sprite = icon;
+                iconImage.preserveAspect = true;
+                iconGo.GetComponent<LayoutElement>().preferredHeight = 90;
+            }
+
+            var infoText = station.IsUnlocked
+                ? $"Preis Lv.{station.PriceLevel} / Ausstattung Lv.{station.EquipmentLevel}"
+                    + $"\nErtrag/Verkauf: {NumberFormat.Format(station.YieldPerSale(def))}  |  Zyklus: {station.CycleSeconds(def):0.0}s"
+                    + (station.HasManager ? "\nManager: aktiv" : $"\nManager: {NumberFormat.Format(def.ManagerCost)}")
+                : "Noch nicht freigeschaltet";
+
+            var infoGo = new GameObject("Info", typeof(Text), typeof(LayoutElement));
+            infoGo.transform.SetParent(panelGo.transform, false);
+            var infoTextComponent = infoGo.GetComponent<Text>();
+            infoTextComponent.font = Resources.Load<Font>("Fonts/Fredoka");
+            infoTextComponent.fontSize = 22;
+            infoTextComponent.alignment = TextAnchor.MiddleCenter;
+            infoTextComponent.color = new Color(0.35f, 0.35f, 0.35f);
+            infoTextComponent.text = infoText;
+            infoGo.GetComponent<LayoutElement>().preferredHeight = station.IsUnlocked ? 76 : 32;
+
+            void Reopen()
+            {
+                Destroy(backdrop);
+                OpenStationDialog(stationIndex);
+            }
+
+            var buyCost = station.IsUnlocked ? station.NextPriceUpgradeCost(def) : station.UnlockCost(def);
+            var buyLabel = station.IsUnlocked ? $"Preis erhoehen ({NumberFormat.Format(buyCost)})" : $"Kaufen ({NumberFormat.Format(buyCost)})";
+            var buyButton = CreateButton(panelGo.transform, buyLabel, () =>
+            {
+                BuyStation(stationIndex);
+                Reopen();
+            }, preferredHeight: 70);
+            var canAffordBuy = revenue >= buyCost;
+            buyButton.interactable = canAffordBuy;
+            buyButton.GetComponent<Image>().color = !station.IsUnlocked && stationIndex == 0
+                ? GuidedButtonColor
+                : (canAffordBuy ? AffordableButtonColor : DefaultButtonColor);
+
+            if (station.IsUnlocked)
+            {
+                var equipCost = station.NextEquipmentUpgradeCost(def);
+                var equipButton = CreateButton(panelGo.transform, $"Ausstattung ({NumberFormat.Format(equipCost)})", () =>
+                {
+                    UpgradeEquipment(stationIndex);
+                    Reopen();
+                }, preferredHeight: 70);
+                var canAffordEquip = revenue >= equipCost;
+                equipButton.interactable = canAffordEquip;
+                equipButton.GetComponent<Image>().color = canAffordEquip ? AffordableButtonColor : DefaultButtonColor;
+
+                if (!station.HasManager)
+                {
+                    var managerButton = CreateButton(panelGo.transform, $"Manager ({NumberFormat.Format(def.ManagerCost)})", () =>
+                    {
+                        BuyManager(stationIndex);
+                        Reopen();
+                    }, preferredHeight: 70);
+                    var canAffordManager = revenue >= def.ManagerCost;
+                    managerButton.interactable = canAffordManager;
+                    managerButton.GetComponent<Image>().color = canAffordManager ? AffordableButtonColor : DefaultButtonColor;
+                }
+            }
+
+            var closeButton = CreateButton(panelGo.transform, "Schliessen", () => Destroy(backdrop), preferredHeight: 60);
+            closeButton.GetComponent<Image>().color = DefaultButtonColor;
+        }
+
         // -- UI-Aufbau: grauer Prototyp, kein Art-Pass (PLAN.md Abschnitt 4/7). --
         //
         // Bewusst mit Auto-Layout (VerticalLayoutGroup + ScrollRect) statt
@@ -1511,30 +1596,10 @@ namespace RestaurantIdle.Game
             prestigeButtonRef = CreateButton(contentGo.transform, "Renovieren", PrestigeReset, preferredHeight: 70);
             prestigeButtonImage = prestigeButtonRef.GetComponent<Image>();
 
-            for (var i = 0; i < StationCatalog.All.Count; i++)
-            {
-                var index = i; // lokale Kopie fuer die Closures unten
-                var icon = Resources.Load<Sprite>($"Icons/{StationIconNames[index]}");
-                var headerRow = CreateStationHeader(contentGo.transform, icon, preferredHeight: 80);
-                var label = headerRow.GetComponentInChildren<Text>();
-                var buyButton = CreateButton(contentGo.transform, "Kaufen", () => BuyStation(index), preferredHeight: 60);
-                var equipButton = CreateButton(contentGo.transform, "Ausstattung", () => UpgradeEquipment(index), preferredHeight: 60);
-                var managerButton = CreateButton(contentGo.transform, "Manager", () => BuyManager(index), preferredHeight: 60);
-
-                rows.Add(new StationRow
-                {
-                    Row = headerRow,
-                    Label = label,
-                    BuyButton = buyButton,
-                    BuyButtonImage = buyButton.GetComponent<Image>(),
-                    BuyButtonLabel = buyButton.GetComponentInChildren<Text>(),
-                    EquipButton = equipButton,
-                    EquipButtonImage = equipButton.GetComponent<Image>(),
-                    EquipButtonLabel = equipButton.GetComponentInChildren<Text>(),
-                    ManagerButton = managerButton,
-                    ManagerButtonImage = managerButton.GetComponent<Image>(),
-                });
-            }
+            // Nutzer-Feedback: keine dauerhafte Liste mit Kaufen/Ausstattung/
+            // Manager-Buttons pro Station mehr -- das laeuft jetzt komplett
+            // ueber OpenStationDialog, ausgeloest durch Antippen der Station
+            // in der 3D-Szene (siehe HandleStationTap).
         }
 
         private static void StretchToFillParent(RectTransform rect)
@@ -1589,46 +1654,6 @@ namespace RestaurantIdle.Game
             text.color = Color.black;
 
             return text;
-        }
-
-        /// <summary>
-        /// Wie CreateLabel, aber mit optionalem quadratischem Icon links
-        /// daneben (Kenney Food Kit, Assets/Resources/Icons) -- fuer die
-        /// Stationszeilen. icon darf null sein (z.B. Icon-PNG fehlt), dann
-        /// verhaelt es sich wie eine reine Textzeile.
-        /// </summary>
-        /// <summary>Gibt die ganze Zeile zurueck (Icon + Panel-Label), nicht nur den Text -- RefreshUi braucht ein SetActive, das Icon und Panel mit einschliesst, siehe StationRow.Row.</summary>
-        private static GameObject CreateStationHeader(Transform parent, Sprite icon, float preferredHeight)
-        {
-            var rowGo = new GameObject("StationHeader", typeof(HorizontalLayoutGroup), typeof(LayoutElement));
-            rowGo.transform.SetParent(parent, false);
-
-            var rowLayoutGroup = rowGo.GetComponent<HorizontalLayoutGroup>();
-            rowLayoutGroup.spacing = 12;
-            rowLayoutGroup.childAlignment = TextAnchor.MiddleLeft;
-            rowLayoutGroup.childForceExpandWidth = false;
-            rowLayoutGroup.childForceExpandHeight = true;
-            rowLayoutGroup.childControlWidth = true;
-            rowLayoutGroup.childControlHeight = true;
-
-            var rowLayoutElement = rowGo.GetComponent<LayoutElement>();
-            rowLayoutElement.preferredHeight = preferredHeight;
-            rowLayoutElement.flexibleWidth = 1;
-
-            if (icon != null)
-            {
-                var iconGo = new GameObject("Icon", typeof(Image), typeof(LayoutElement));
-                iconGo.transform.SetParent(rowGo.transform, false);
-                var iconImage = iconGo.GetComponent<Image>();
-                iconImage.sprite = icon;
-                iconImage.preserveAspect = true;
-                var iconLayoutElement = iconGo.GetComponent<LayoutElement>();
-                iconLayoutElement.preferredWidth = preferredHeight;
-                iconLayoutElement.flexibleWidth = 0;
-            }
-
-            CreateLabel(rowGo.transform, preferredHeight);
-            return rowGo;
         }
 
         private static Button CreateButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick, float preferredHeight)
