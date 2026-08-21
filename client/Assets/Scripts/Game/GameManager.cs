@@ -42,6 +42,10 @@ namespace RestaurantIdle.Game
         private BigDouble prestigeStars;
         private float timeSinceLastSync;
         private float guestSpawnTimer;
+        // Weltposition pro Station, fuer den Muenz-Burst bei UI-Button-Klicks
+        // (dort gibt es keinen Raycast-Treffpunkt wie beim 3D-Tap). Einmalig
+        // aus den StationHotspot-Objekten in der Szene aufgebaut.
+        private readonly Dictionary<int, Vector3> stationWorldPositions = new();
 
         // InitializeGame() laedt asynchron (Backend-Request ueber mehrere Frames)
         // -- Update() etc. laufen aber schon ab dem ersten Frame und wuerden ohne
@@ -106,6 +110,12 @@ namespace RestaurantIdle.Game
             }
 
             BuildUi();
+
+            foreach (var hotspot in FindObjectsByType<StationHotspot>(FindObjectsSortMode.None))
+            {
+                stationWorldPositions[hotspot.StationIndex] = hotspot.transform.position;
+            }
+
             RefreshUi();
 
             // Deckt insbesondere den Umzug eines bisher rein lokalen
@@ -224,7 +234,7 @@ namespace RestaurantIdle.Game
             var ray = Camera.main.ScreenPointToRay(Input.mousePosition);
             if (Physics.Raycast(ray, out var hit) && hit.collider.TryGetComponent<StationHotspot>(out var hotspot))
             {
-                ProduceNow(hotspot.StationIndex);
+                ProduceNow(hotspot.StationIndex, hit.point);
             }
         }
 
@@ -321,7 +331,7 @@ namespace RestaurantIdle.Game
             }
         }
 
-        private void ProduceNow(int i)
+        private void ProduceNow(int i, Vector3? burstPosition = null)
         {
             var earned = state.Stations[i].ProduceNow(StationCatalog.All[i]);
             if (earned <= BigDouble.Zero)
@@ -335,6 +345,12 @@ namespace RestaurantIdle.Game
             RefreshUi();
             FlashHeader();
             PlaySfx("sfx-produce");
+
+            var position = burstPosition ?? (stationWorldPositions.TryGetValue(i, out var pos) ? pos : (Vector3?)null);
+            if (position.HasValue)
+            {
+                CoinBurst.SpawnAt(position.Value);
+            }
         }
 
         private void BuyStation(int i)
