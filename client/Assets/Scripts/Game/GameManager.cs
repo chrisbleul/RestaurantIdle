@@ -453,6 +453,7 @@ namespace RestaurantIdle.Game
             scrollRect.horizontal = false;
             scrollRect.vertical = true;
 
+            CreateGuestStage(contentGo.transform);
             headerLabel = CreateLabel(contentGo.transform, preferredHeight: 130);
             marketingButtonRef = CreateButton(contentGo.transform, "Marketing kaufen", BuyMarketing, preferredHeight: 70);
             prestigeLabel = CreateLabel(contentGo.transform, preferredHeight: 80);
@@ -502,6 +503,34 @@ namespace RestaurantIdle.Game
             layoutElement.flexibleWidth = 1;
 
             return text;
+        }
+
+        /// <summary>
+        /// Erste sichtbare Bewegung im Spiel statt nur Zahlen (Kenney Toon
+        /// Characters, Assets/Resources/Characters) -- ein Gast laeuft in
+        /// einer eigenen, geclippten Bahn ueber die Content-Liste. Siehe
+        /// GuestWalker fuer die eigentliche Animation/Bewegung.
+        /// </summary>
+        private static void CreateGuestStage(Transform parent)
+        {
+            var stageGo = new GameObject("Stage", typeof(Image), typeof(LayoutElement), typeof(RectMask2D));
+            stageGo.transform.SetParent(parent, false);
+            stageGo.GetComponent<Image>().color = new Color(0.85f, 0.93f, 0.85f);
+
+            var stageLayoutElement = stageGo.GetComponent<LayoutElement>();
+            stageLayoutElement.preferredHeight = 220;
+            stageLayoutElement.flexibleWidth = 1;
+
+            var guestGo = new GameObject("Guest", typeof(Image), typeof(GuestWalker));
+            guestGo.transform.SetParent(stageGo.transform, false);
+            guestGo.GetComponent<Image>().preserveAspect = true;
+
+            var guestRect = (RectTransform)guestGo.transform;
+            guestRect.anchorMin = new Vector2(0.5f, 0f);
+            guestRect.anchorMax = new Vector2(0.5f, 0f);
+            guestRect.pivot = new Vector2(0.5f, 0f);
+            guestRect.sizeDelta = new Vector2(90, 130);
+            guestRect.anchoredPosition = new Vector2(0, 10);
         }
 
         /// <summary>
