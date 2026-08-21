@@ -308,6 +308,19 @@ namespace RestaurantIdle.Game
             SaveSystem.Save(state);
         }
 
+        // Kenney Interface Sounds (CC0, Assets/Resources/Audio). PlayClipAtPoint
+        // statt eines persistenten AudioSource-Components -- braucht keine
+        // Instanzreferenz, passt deshalb auch in statische Methoden wie
+        // CreateButton, und raeumt sich selbst auf.
+        private static void PlaySfx(string resourceName)
+        {
+            var clip = Resources.Load<AudioClip>($"Audio/{resourceName}");
+            if (clip != null)
+            {
+                AudioSource.PlayClipAtPoint(clip, Vector3.zero);
+            }
+        }
+
         private void ProduceNow(int i)
         {
             var earned = state.Stations[i].ProduceNow(StationCatalog.All[i]);
@@ -321,6 +334,7 @@ namespace RestaurantIdle.Game
             lifetimeRevenue += effective;
             RefreshUi();
             FlashHeader();
+            PlaySfx("sfx-produce");
         }
 
         private void BuyStation(int i)
@@ -335,6 +349,7 @@ namespace RestaurantIdle.Game
             state.Stations[i].Buy();
             RefreshUi();
             FlashHeader();
+            PlaySfx("sfx-purchase");
         }
 
         private void BuyManager(int i)
@@ -349,6 +364,7 @@ namespace RestaurantIdle.Game
             state.Stations[i].HasManager = true;
             RefreshUi();
             FlashHeader();
+            PlaySfx("sfx-purchase");
         }
 
         private void BuyMarketing()
@@ -363,6 +379,7 @@ namespace RestaurantIdle.Game
             state.MarketingLevel++;
             RefreshUi();
             FlashHeader();
+            PlaySfx("sfx-purchase");
         }
 
         /// <summary>
@@ -390,6 +407,7 @@ namespace RestaurantIdle.Game
 
             RefreshUi();
             FlashHeader();
+            PlaySfx("sfx-milestone");
             Persist();
         }
 
@@ -640,6 +658,7 @@ namespace RestaurantIdle.Game
             var punch = go.GetComponent<ButtonPunch>();
             button.onClick.AddListener(onClick);
             button.onClick.AddListener(punch.Punch);
+            button.onClick.AddListener(() => PlaySfx("sfx-click"));
 
             var layoutElement = go.GetComponent<LayoutElement>();
             layoutElement.preferredHeight = preferredHeight;
