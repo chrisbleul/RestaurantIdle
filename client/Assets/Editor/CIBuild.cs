@@ -166,6 +166,32 @@ namespace RestaurantIdle.Editor
                 InstantiateModel($"Assets/Models/Furniture/{model}", $"Station_{stationName}",
                     new Vector3(x, 0f, 0f), Quaternion.identity, FurnitureScale, stationIndex: i + 1);
             }
+
+            BuildBackWall();
+        }
+
+        /// <summary>
+        /// Restaurant-Rueckwand hinter der Stationsreihe (Kenney Modular
+        /// Buildings, CC0) -- Nutzerwunsch: der Hintergrund soll wie ein
+        /// Restaurant aussehen statt nur gruene Wiese. Selber Massstab-
+        /// Ansatz wie bei Location1Placeholder (FurnitureScale), noch nicht
+        /// per MeshRenderer.bounds vermessen -- ggf. nach dem ersten
+        /// Screenshot nachjustieren.
+        /// </summary>
+        private static void BuildBackWall()
+        {
+            const float wallZ = 1.5f;
+            var wallSegments = new[] { "building-block", "building-door-window", "building-block", "building-window" };
+
+            for (var i = 0; i < wallSegments.Length; i++)
+            {
+                var x = -0.5f + i * 2f;
+                InstantiateModel($"Assets/Models/Building/{wallSegments[i]}.fbx", $"Wall_{i}",
+                    new Vector3(x, 0f, wallZ), Quaternion.Euler(0f, 180f, 0f), FurnitureScale);
+            }
+
+            InstantiateModel("Assets/Models/Building/roof-flat-awning-a.fbx", "Awning",
+                new Vector3(0.5f, 1.3f, 0.9f), Quaternion.identity, FurnitureScale);
         }
 
         private static void InstantiateModel(string assetPath, string instanceName, Vector3 position, Quaternion rotation,
