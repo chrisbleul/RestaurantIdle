@@ -77,11 +77,14 @@ namespace RestaurantIdle.Editor
             cameraObject.tag = "MainCamera";
             var camera = cameraObject.GetComponent<Camera>();
             camera.orthographic = true;
-            camera.orthographicSize = 6f;
+            camera.orthographicSize = 3f;
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.62f, 0.82f, 0.92f);
             cameraObject.transform.rotation = Quaternion.Euler(30f, 45f, 0f);
-            cameraObject.transform.position = cameraObject.transform.rotation * new Vector3(0, 0, -15f);
+            // Zielpunkt ungefaehr in der Mitte der Location-1-Objekte, nicht
+            // Weltursprung -- die Theke selbst hat ihren Pivot in einer Ecke.
+            var lookTarget = new Vector3(0.5f, 0.4f, 0f);
+            cameraObject.transform.position = lookTarget + cameraObject.transform.rotation * new Vector3(0, 0, -15f);
 
             var lightObject = new GameObject("Directional Light", typeof(Light));
             var light = lightObject.GetComponent<Light>();
@@ -109,27 +112,41 @@ namespace RestaurantIdle.Editor
         /// Platzierung, keine Anbindung an GameManager/Balancing (folgt in
         /// einem eigenen Schritt, sobald die Optik steht).
         /// </summary>
+        // Kenney-Furniture-Kit-Modelle sind nativ ~4x zu gross (Thekenhoehe
+        // 4.2 Einheiten statt der erwarteten ~1) -- 0.25 bringt sie auf
+        // plausible Meter-Massstab (Theke ~1.05m hoch), gemessen per
+        // MeshRenderer.bounds ueber MCP statt geraten.
+        private const float FurnitureScale = 0.25f;
+
         private static void BuildLocation1Placeholder()
         {
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
             ground.transform.position = Vector3.zero;
-            ground.transform.localScale = new Vector3(3f, 1f, 3f);
+            ground.transform.localScale = new Vector3(1f, 1f, 1f);
             var groundRenderer = ground.GetComponent<MeshRenderer>();
             groundRenderer.sharedMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
             {
                 color = new Color(0.55f, 0.75f, 0.45f),
             };
 
+            // Theke: Pivot liegt an einer Ecke, nicht in der Mitte (Kenney-
+            // Konvention fuers Aneinanderreihen von Modulen) -- deshalb bei
+            // 0/0/0 platziert statt zentriert.
             InstantiateModel("Assets/Models/Furniture/kitchenBar.fbx", "Station_Kaffeemaschine_Theke",
-                new Vector3(0f, 0f, 0f), Quaternion.identity);
+                Vector3.zero, Quaternion.identity, FurnitureScale);
+
+            // Auf der Thekenoberflaeche (Thekenhoehe 1.05m nach Skalierung),
+            // ungefaehr mittig ueber der Theke (deren eigener Mittelpunkt
+            // liegt bei x=0.54/z=0.26 relativ zum Eck-Pivot).
             InstantiateModel("Assets/Models/Furniture/kitchenCoffeeMachine.fbx", "Station_Kaffeemaschine",
-                new Vector3(0f, 0.9f, 0f), Quaternion.identity);
+                new Vector3(0.5f, 1.05f, 0.25f), Quaternion.identity, FurnitureScale);
+
             InstantiateModel("Assets/Models/Furniture/stoolBar.fbx", "Hocker",
-                new Vector3(0f, 0f, -1.2f), Quaternion.identity);
+                new Vector3(0.5f, 0f, -0.6f), Quaternion.identity, FurnitureScale);
         }
 
-        private static void InstantiateModel(string assetPath, string instanceName, Vector3 position, Quaternion rotation)
+        private static void InstantiateModel(string assetPath, string instanceName, Vector3 position, Quaternion rotation, float scale = 1f)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
             if (prefab == null)
@@ -142,6 +159,7 @@ namespace RestaurantIdle.Editor
             instance.name = instanceName;
             instance.transform.position = position;
             instance.transform.rotation = rotation;
+            instance.transform.localScale = Vector3.one * scale;
         }
     }
 
