@@ -190,11 +190,21 @@ namespace RestaurantIdle.Editor
         // markiert hatte. Gemessen: building-block.fbx ist bei Scale 1
         // 1.0 x 0.625 x 1.0 -- bei 0.25 also nur 0.156 Einheiten hoch,
         // praktisch eine unsichtbare Bodenleiste. Die komplette Rueckwand
-        // war dadurch effektiv nie sichtbar (weder vorher mit der fixen
-        // Kamera, wo sie nur zufaellig durch Ueberzoomen kaschiert wurde,
-        // noch jetzt mit der mitwachsenden Kamera). Eigene, echt vermessene
-        // BuildingScale statt FurnitureScale mitverwendet.
-        private const float BuildingScale = 3.2f;
+        // war dadurch effektiv nie sichtbar. Eigene, echt vermessene
+        // BuildingScale statt FurnitureScale.
+        //
+        // 3.2 (Zielhoehe ~2 Einheiten, deutlich hoeher als die Stationen)
+        // war beim ersten Screenshot-Abgleich massiv zu gross fuer die
+        // mitwachsende Kamera aus dem Fun-Pass -- bei minimalem Zoom
+        // (Fruehspiel, ein bis zwei Stationen sichtbar) fuellte die Wand
+        // fast den ganzen Bildschirm. 1.0 (Wandhoehe = native 0.625, in
+        // derselben Groessenordnung wie die Stationen) passt sich der
+        // engen Fruehspiel-Kamera unter, ohne dass die Wand komplett
+        // verschwindet -- Kompromiss statt einer fuer die feste alte
+        // Kamera "richtig" gemessenen, aber fuer die neue dynamische
+        // Kamera zu grossen Zahl.
+        private const float BuildingScale = 1.0f;
+        private const float WallNativeHeight = 0.625f;
 
         private static void BuildBackWall()
         {
@@ -209,10 +219,14 @@ namespace RestaurantIdle.Editor
                     new Vector3(x, 0f, wallZ), Quaternion.Euler(0f, 180f, 0f), BuildingScale);
             }
 
-            // Nahe der Oberkante der jetzt ~2 Einheiten hohen Wand (vorher
-            // bei y=1.3 -- passte nur zur alten, viel zu niedrigen Wand).
+            // Y relativ zur tatsaechlichen Wandhoehe statt eines fest
+            // eingetragenen Werts -- sonst faellt die Awning bei der
+            // naechsten BuildingScale-Anpassung wieder aus dem Rahmen
+            // (ist beim ersten Versuch mit BuildingScale 3.2->1.0 bereits
+            // passiert).
+            var awningY = WallNativeHeight * BuildingScale * 0.85f;
             InstantiateModel("Assets/Models/Building/roof-flat-awning-a.fbx", "Awning",
-                new Vector3(0.5f, 1.9f, 0.9f), Quaternion.identity, BuildingScale);
+                new Vector3(0.5f, awningY, 0.9f), Quaternion.identity, BuildingScale);
         }
 
         private static void InstantiateModel(string assetPath, string instanceName, Vector3 position, Quaternion rotation,
