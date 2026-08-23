@@ -599,7 +599,10 @@ namespace RestaurantIdle.Game
         // der zuvor mehrfach nachjustiert wurde.
         private const float MinOrthographicSize = 2f;
         private const float CameraFramingMarginX = 1.4f;
-        private const float CameraFramingMarginY = 1.6f;
+        private const float CameraFramingMarginY = 1.2f;
+
+        /// <summary>Grobe Hoehe eines Stationsmodells ueber seinem Pivot -- siehe RecomputeCameraTarget.</summary>
+        private const float StationVisualHeight = 0.9f;
         private const float CameraFramingLerpSpeed = 1.2f;
 
         /// <summary>
@@ -1103,6 +1106,12 @@ namespace RestaurantIdle.Game
                 if (revealed && stationWorldPositions.TryGetValue(i, out var position))
                 {
                     Include(position);
+
+                    // Zusaetzlich die Oberkante: gerahmt werden sonst nur
+                    // die Pivot-PUNKTE, und ein Geraet ragt ueber seinen
+                    // Pivot hinaus -- die oberste Station wurde im Testlauf
+                    // genau um ihre eigene Hoehe vom Zielbalken abgeschnitten.
+                    Include(position + Vector3.up * StationVisualHeight);
                 }
             }
 

@@ -216,7 +216,10 @@ namespace RestaurantIdle.Editor
                 RestaurantLayout.StationPosition(0) + new Vector3(0f, CounterHeight, 0f),
                 rotation, 0.45f, FitAxis.Height, stationIndex: 0);
 
-            var stoolSpot = RestaurantLayout.GuestStandPosition(RestaurantLayout.StationPosition(0));
+            // Nicht auf den Warteplatz selbst: dort steht der bediente
+            // Gast, Hocker und Sprite lagen im Testlauf uebereinander.
+            var stoolSpot = RestaurantLayout.GuestStandPosition(RestaurantLayout.StationPosition(0))
+                + RestaurantLayout.CounterDirection * 0.6f;
             InstantiateModel("Assets/Models/Furniture/stoolBar.fbx", "Hocker",
                 new Vector3(stoolSpot.x, 0f, stoolSpot.z), rotation, 0.7f);
 
