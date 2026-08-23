@@ -1,5 +1,9 @@
 # Restaurant Idle — Gap-Analyse & Plan v3
 
+> **Status: abgeschlossen.** Die Analyse dieses Dokuments gilt weiterhin,
+> die Checklisten in Abschnitt 6 sind überholt. Aktueller Stand und
+> verbleibende Arbeit stehen in [PLANv4.md](PLANv4.md).
+
 **Codestand:** `RestaurantIdle-code.zip`, 21.08.2026
 **Referenzen:** Eatventure (Lessmore), Cat Snack Bar (Treeplla), Idle Restaurant Tycoon
 **Umfang:** ~1.410 Zeilen Unity-Gameplay, ~500 Zeilen BalancingCore, Fastify/Postgres-Backend

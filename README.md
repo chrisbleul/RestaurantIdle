@@ -1,10 +1,16 @@
 # Restaurant Idle Game
 
-Projektplan: siehe `PLAN.md`. Stand: Phase 1 (Balancing), Phase 5
-(Backend-Grundgerüst, live auf `cgo-app.de`) und Phase 2/3 im Client (alle
-sieben Stationen, Manager, Marketing/Gästestrom, lokaler Save) sind
-umgesetzt. WebGL-CI ist eingerichtet, aber noch nicht grün -- siehe
-"Bekannte offene Punkte" unten.
+Projektplan: **`PLANv4.md`** ist der aktuelle Stand und die einzige gültige
+Quelle für offene Arbeit. `PLAN.md`, `PLANv2.md` und `PLANv3.md` sind
+abgeschlossen und dokumentieren die jeweilige Analyse -- ihre Checklisten
+sind überholt.
+
+Kurzstand: Ökonomie (zwei Upgrade-Achsen), Auftragskette (Geld entsteht nur
+beim Servieren eines echten Gastes), Warteschlange, Ruf/Trinkgeld, Rush Hour
+und der Art-Pass im Hochformat sind umgesetzt. Offen sind vor allem
+Retention-Inhalte und echtes Balancing, siehe PLANv4 Abschnitt 5. WebGL-CI
+ist eingerichtet, aber noch nicht grün -- siehe "Bekannte offene Punkte"
+unten.
 
 ## Struktur
 
