@@ -106,6 +106,58 @@ namespace RestaurantIdle.Game
             sfxSource.PlayOneShot(clip);
         }
 
+        private static Sprite blobShadowSprite;
+
+        /// <summary>
+        /// Weicher runder Schattenfleck fuer den Boden unter Gaesten und
+        /// Personal (siehe GroundShadow). Die Figuren sind Billboard-Sprites
+        /// und werfen deshalb keinen echten Schlagschatten -- ohne diesen
+        /// Fleck wirken sie auf den Boden geklebt statt darauf zu stehen.
+        ///
+        /// Prozedural erzeugt statt als PNG mitgeliefert: es ist ein
+        /// radialer Alpha-Verlauf, dafuer lohnt kein Asset mit
+        /// Import-Einstellungen.
+        /// </summary>
+        public static Sprite BlobShadowSprite
+        {
+            get
+            {
+                if (blobShadowSprite != null)
+                {
+                    return blobShadowSprite;
+                }
+
+                const int size = 64;
+                var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+                {
+                    name = "BlobShadow",
+                    wrapMode = TextureWrapMode.Clamp,
+                };
+
+                var center = (size - 1) * 0.5f;
+                var pixels = new Color32[size * size];
+                for (var y = 0; y < size; y++)
+                {
+                    for (var x = 0; x < size; x++)
+                    {
+                        var distance = Vector2.Distance(new Vector2(x, y), new Vector2(center, center)) / center;
+                        // Quadriert: harter Kern, weich auslaufender Rand --
+                        // ein linearer Verlauf sieht aus wie ein grauer
+                        // Kreis, nicht wie ein Schatten.
+                        var alpha = Mathf.Clamp01(1f - distance);
+                        alpha *= alpha;
+                        pixels[(y * size) + x] = new Color32(0, 0, 0, (byte)(alpha * 255f));
+                    }
+                }
+
+                texture.SetPixels32(pixels);
+                texture.Apply();
+
+                blobShadowSprite = Sprite.Create(texture, new Rect(0f, 0f, size, size), new Vector2(0.5f, 0.5f), 100f);
+                return blobShadowSprite;
+            }
+        }
+
         /// <summary>Gemeinsames Material fuer alle Partikeleffekte -- als sharedMaterial zuweisen, nie veraendern.</summary>
         public static Material ParticleMaterial
         {
@@ -137,6 +189,7 @@ namespace RestaurantIdle.Game
             Clips.Clear();
             sfxSource = null;
             uiFont = null;
+            blobShadowSprite = null;
             particleMaterial = null;
             mainCamera = null;
         }

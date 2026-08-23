@@ -716,6 +716,9 @@ namespace RestaurantIdle.Game
                 guest.transform.rotation = GameAssets.MainCamera.transform.rotation;
             }
 
+            // VIPs sind etwas groesser skaliert, ihr Schatten entsprechend.
+            GroundShadow.Attach(guest.transform, isVip ? 0.34f : 0.3f, 0.32f);
+
             var mover = guest.AddComponent<GuestMover>();
             mover.SpeedMultiplier = UnityEngine.Random.Range(0.85f, 1.2f);
             guest.AddComponent<GuestSpriteAnimator>();
@@ -1434,6 +1437,8 @@ namespace RestaurantIdle.Game
                 - RestaurantLayout.GuestSide * 0.55f
                 + new Vector3(0f, RestaurantLayout.GuestGroundY, 0f);
 
+            GroundShadow.Attach(worker.transform, 0.28f, 0.3f);
+
             var staff = worker.AddComponent<StaffWorker>();
             staff.Init(staffSpot, state.Stations[i].CycleSeconds(StationCatalog.All[i]));
         }
@@ -1447,6 +1452,10 @@ namespace RestaurantIdle.Game
         /// werden, nicht zur Laufzeit.
         /// </summary>
         private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        private const string BaseMapName = "_BaseMap";
+
+        /// <summary>Unitys Plane-Primitive ist nativ 10x10 Einheiten gross -- Grundlage fuer die Kachelrechnung.</summary>
+        private const float PlaneNativeSize = 10f;
 
         /// <summary>
         /// Material.color ist eine Kompatibilitaets-Eigenschaft, die bei
@@ -1463,6 +1472,7 @@ namespace RestaurantIdle.Game
             if (ground != null && ground.TryGetComponent<MeshRenderer>(out var groundRenderer))
             {
                 groundRenderer.sharedMaterial.SetColor(BaseColorId, theme.Ground);
+                ApplySurface(ground.transform, groundRenderer, SurfaceTexture.Grain, SurfaceTexture.GrainWorldSize);
             }
 
             // Eigene Farbe, nicht theme.Ground: der Innenboden bekam bisher
@@ -1473,6 +1483,7 @@ namespace RestaurantIdle.Game
             if (floor != null && floor.TryGetComponent<MeshRenderer>(out var floorRenderer))
             {
                 floorRenderer.sharedMaterial.SetColor(BaseColorId, theme.Floor);
+                ApplySurface(floor.transform, floorRenderer, SurfaceTexture.Tiles, SurfaceTexture.TileWorldSize * 4f);
             }
 
             // sharedMaterial waere hier falsch: die Wandsegmente kommen aus
@@ -1499,6 +1510,30 @@ namespace RestaurantIdle.Game
                     wallRenderer.material.SetColor(BaseColorId, theme.Wall);
                 }
             }
+        }
+
+        /// <summary>
+        /// Legt eine der prozeduralen Strukturen (SurfaceTexture) auf eine
+        /// Bodenflaeche und rechnet die Kachelung so, dass ein
+        /// Texturausschnitt immer dieselbe Groesse in Weltmasse hat --
+        /// unabhaengig davon, wie die Flaeche skaliert ist. Ohne diese
+        /// Rechnung wuerden die Fliesen mit der Raumgroesse mitwachsen und
+        /// genau den Massstabsbezug wieder zerstoeren, den sie herstellen
+        /// sollen.
+        /// </summary>
+        private static void ApplySurface(Transform surface, MeshRenderer renderer, Texture2D texture, float worldSizePerRepeat)
+        {
+            if (texture == null || worldSizePerRepeat <= 0.001f)
+            {
+                return;
+            }
+
+            var scale = surface.localScale;
+            var material = renderer.sharedMaterial;
+            material.SetTexture(BaseMapName, texture);
+            material.SetTextureScale(BaseMapName, new Vector2(
+                scale.x * PlaneNativeSize / worldSizePerRepeat,
+                scale.z * PlaneNativeSize / worldSizePerRepeat));
         }
 
         private void BuyMarketing()
