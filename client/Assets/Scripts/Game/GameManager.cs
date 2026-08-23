@@ -190,6 +190,15 @@ namespace RestaurantIdle.Game
         {
             AudioListener.volume = PlayerPrefs.GetInt(MutedPrefKey, 0) == 1 ? 0f : 1f;
 
+            // Ohne diese Zeile laeuft das Spiel auf iOS mit 30 fps (Unitys
+            // Voreinstellung fuer Mobilgeraete) -- die weiche Kamerafahrt
+            // und die Pop-In-Animation leben davon, fluessig zu sein.
+            // vSyncCount hat auf Mobilgeraeten keine Wirkung, wird aber auf
+            // 0 gesetzt, damit targetFrameRate auch im Editor und in
+            // Desktop-Builds greift.
+            QualitySettings.vSyncCount = 0;
+            Application.targetFrameRate = 60;
+
             BackendClient.LoadResult backendResult = null;
             yield return BackendClient.Load(r => backendResult = r);
 
@@ -491,12 +500,12 @@ namespace RestaurantIdle.Game
                 overUi = EventSystem.current.IsPointerOverGameObject();
             }
 
-            if (!tapped || overUi || Camera.main == null)
+            if (!tapped || overUi || GameAssets.MainCamera == null)
             {
                 return;
             }
 
-            var ray = Camera.main.ScreenPointToRay(screenPosition);
+            var ray = GameAssets.MainCamera.ScreenPointToRay(screenPosition);
             if (!Physics.Raycast(ray, out var hit) || !hit.collider.TryGetComponent<StationHotspot>(out var hotspot))
             {
                 return;
@@ -692,15 +701,15 @@ namespace RestaurantIdle.Game
             // Natur aus keinen Raycast.
             var guest = new GameObject(isVip ? "Guest_VIP" : "Guest", typeof(SpriteRenderer));
             var spriteRenderer = guest.GetComponent<SpriteRenderer>();
-            spriteRenderer.sprite = Resources.Load<Sprite>("Characters/guest-idle");
+            spriteRenderer.sprite = GameAssets.Sprite("Characters/guest-idle");
             spriteRenderer.color = isVip ? VipTint : Color.white;
             guest.transform.localScale = Vector3.one * (isVip ? GuestSpriteScale * 1.15f : GuestSpriteScale);
-            if (Camera.main != null)
+            if (GameAssets.MainCamera != null)
             {
                 // Billboard: Sprite-Ebene richtet sich einmalig nach der
                 // (fest stehenden) Kamera aus, kein Nachfuehren pro Frame
                 // noetig -- die Kamera bewegt sich nirgends im Spiel.
-                guest.transform.rotation = Camera.main.transform.rotation;
+                guest.transform.rotation = GameAssets.MainCamera.transform.rotation;
             }
 
             var mover = guest.AddComponent<GuestMover>();
@@ -1076,7 +1085,7 @@ namespace RestaurantIdle.Game
         /// </summary>
         private void RecomputeCameraTarget()
         {
-            var cam = Camera.main;
+            var cam = GameAssets.MainCamera;
             if (cam == null)
             {
                 return;
@@ -1186,12 +1195,12 @@ namespace RestaurantIdle.Game
         /// <summary>Weiche Kamerafahrt Richtung targetOrthoSize/targetLookAt, jeden Frame aus Update() aufgerufen -- siehe RecomputeCameraTarget fuer die Zielwerte.</summary>
         private void ApplyCameraFraming()
         {
-            if (Camera.main == null)
+            if (GameAssets.MainCamera == null)
             {
                 return;
             }
 
-            var cam = Camera.main;
+            var cam = GameAssets.MainCamera;
             var t = Time.deltaTime * CameraFramingLerpSpeed;
             cam.orthographicSize = Mathf.Lerp(cam.orthographicSize, targetOrthoSize, t);
 
@@ -1234,18 +1243,11 @@ namespace RestaurantIdle.Game
             SaveSystem.Save(state);
         }
 
-        // Kenney Interface Sounds (CC0, Assets/Resources/Audio). PlayClipAtPoint
-        // statt eines persistenten AudioSource-Components -- braucht keine
-        // Instanzreferenz, passt deshalb auch in statische Methoden wie
-        // CreateButton, und raeumt sich selbst auf.
-        private static void PlaySfx(string resourceName)
-        {
-            var clip = Resources.Load<AudioClip>($"Audio/{resourceName}");
-            if (clip != null)
-            {
-                AudioSource.PlayClipAtPoint(clip, Vector3.zero);
-            }
-        }
+        // Kenney Interface Sounds (CC0, Assets/Resources/Audio). Liegt in
+        // GameAssets, weil dort die dauerhafte AudioSource und der
+        // Clip-Zwischenspeicher sitzen -- bleibt hier als statische
+        // Methode, damit auch CreateButton sie aufrufen kann.
+        private static void PlaySfx(string resourceName) => GameAssets.PlaySfx(resourceName);
 
         /// <summary>
         /// PLANv3.md K2: manuelles Antippen bezahlt nur noch aus, wenn hier
@@ -1393,16 +1395,16 @@ namespace RestaurantIdle.Game
             // Zylinder neben lauter Charakteren.
             var worker = new GameObject($"Staff_{i}", typeof(SpriteRenderer));
             var spriteRenderer = worker.GetComponent<SpriteRenderer>();
-            spriteRenderer.sprite = Resources.Load<Sprite>("Characters/guest-idle");
+            spriteRenderer.sprite = GameAssets.Sprite("Characters/guest-idle");
 
             // Deutlich anderer Farbton als jeder Gast: der Spieler muss auf
             // einen Blick sehen koennen, welche Station bereits automatisch
             // bedient wird.
             spriteRenderer.color = new Color(0.55f, 0.75f, 1f);
             worker.transform.localScale = Vector3.one * (GuestSpriteScale * 0.9f);
-            if (Camera.main != null)
+            if (GameAssets.MainCamera != null)
             {
-                worker.transform.rotation = Camera.main.transform.rotation;
+                worker.transform.rotation = GameAssets.MainCamera.transform.rotation;
             }
 
             // Auf der Wandseite der Station -- der Warteplatz davor gehoert
@@ -1679,14 +1681,13 @@ namespace RestaurantIdle.Game
         /// </summary>
         private void ShowOfflineEarningsDialog(BigDouble earned, double minutes)
         {
-            var canvas = FindFirstObjectByType<Canvas>();
-            if (canvas == null)
+            if (canvasTransform == null)
             {
                 return;
             }
 
             var backdrop = new GameObject("OfflineEarningsBackdrop", typeof(Image));
-            backdrop.transform.SetParent(canvas.transform, false);
+            backdrop.transform.SetParent(canvasTransform, false);
             StretchToFillParent(backdrop.GetComponent<RectTransform>());
             backdrop.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.65f);
 
@@ -1699,7 +1700,7 @@ namespace RestaurantIdle.Game
             panelRect.sizeDelta = new Vector2(760, 0);
 
             var panelImage = panelGo.GetComponent<Image>();
-            var panelSprite = Resources.Load<Sprite>("UI/panel-rectangle");
+            var panelSprite = GameAssets.Sprite("UI/panel-rectangle");
             if (panelSprite != null)
             {
                 panelImage.sprite = panelSprite;
@@ -1723,7 +1724,7 @@ namespace RestaurantIdle.Game
             var titleGo = new GameObject("Title", typeof(Text), typeof(LayoutElement));
             titleGo.transform.SetParent(panelGo.transform, false);
             var titleText = titleGo.GetComponent<Text>();
-            titleText.font = Resources.Load<Font>("Fonts/Fredoka");
+            titleText.font = GameAssets.UiFont;
             titleText.fontSize = 34;
             titleText.alignment = TextAnchor.MiddleCenter;
             titleText.color = Color.black;
@@ -1733,7 +1734,7 @@ namespace RestaurantIdle.Game
             var amountGo = new GameObject("Amount", typeof(Text), typeof(LayoutElement));
             amountGo.transform.SetParent(panelGo.transform, false);
             var amountText = amountGo.GetComponent<Text>();
-            amountText.font = Resources.Load<Font>("Fonts/Fredoka");
+            amountText.font = GameAssets.UiFont;
             amountText.fontSize = 46;
             amountText.alignment = TextAnchor.MiddleCenter;
             amountText.color = new Color(0.18f, 0.5f, 0.22f);
@@ -1743,7 +1744,7 @@ namespace RestaurantIdle.Game
             var subGo = new GameObject("Sub", typeof(Text), typeof(LayoutElement));
             subGo.transform.SetParent(panelGo.transform, false);
             var subText = subGo.GetComponent<Text>();
-            subText.font = Resources.Load<Font>("Fonts/Fredoka");
+            subText.font = GameAssets.UiFont;
             subText.fontSize = 22;
             subText.alignment = TextAnchor.MiddleCenter;
             subText.color = new Color(0.4f, 0.4f, 0.4f);
@@ -1771,14 +1772,13 @@ namespace RestaurantIdle.Game
         /// </summary>
         private void OpenSettings()
         {
-            var canvas = FindFirstObjectByType<Canvas>();
-            if (canvas == null)
+            if (canvasTransform == null)
             {
                 return;
             }
 
             var backdrop = new GameObject("SettingsBackdrop", typeof(Image));
-            backdrop.transform.SetParent(canvas.transform, false);
+            backdrop.transform.SetParent(canvasTransform, false);
             StretchToFillParent(backdrop.GetComponent<RectTransform>());
             backdrop.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.65f);
 
@@ -1791,7 +1791,7 @@ namespace RestaurantIdle.Game
             panelRect.sizeDelta = new Vector2(760, 0);
 
             var panelImage = panelGo.GetComponent<Image>();
-            var panelSprite = Resources.Load<Sprite>("UI/panel-rectangle");
+            var panelSprite = GameAssets.Sprite("UI/panel-rectangle");
             if (panelSprite != null)
             {
                 panelImage.sprite = panelSprite;
@@ -1814,7 +1814,7 @@ namespace RestaurantIdle.Game
             var titleGo = new GameObject("Title", typeof(Text), typeof(LayoutElement));
             titleGo.transform.SetParent(panelGo.transform, false);
             var titleText = titleGo.GetComponent<Text>();
-            titleText.font = Resources.Load<Font>("Fonts/Fredoka");
+            titleText.font = GameAssets.UiFont;
             titleText.fontSize = 34;
             titleText.alignment = TextAnchor.MiddleCenter;
             titleText.color = Color.black;
@@ -1832,7 +1832,7 @@ namespace RestaurantIdle.Game
             var statsGo = new GameObject("Stats", typeof(Text), typeof(LayoutElement));
             statsGo.transform.SetParent(panelGo.transform, false);
             var statsText = statsGo.GetComponent<Text>();
-            statsText.font = Resources.Load<Font>("Fonts/Fredoka");
+            statsText.font = GameAssets.UiFont;
             statsText.fontSize = 22;
             statsText.alignment = TextAnchor.MiddleCenter;
             statsText.color = new Color(0.35f, 0.35f, 0.35f);
@@ -1867,14 +1867,13 @@ namespace RestaurantIdle.Game
         /// <summary>Generisches Ja/Nein-Modal fuer destruktive Aktionen -- aktuell nur vom Reset-Button aus OpenSettings verwendet.</summary>
         private void ShowConfirmDialog(string title, string message, string confirmLabel, UnityEngine.Events.UnityAction onConfirm)
         {
-            var canvas = FindFirstObjectByType<Canvas>();
-            if (canvas == null)
+            if (canvasTransform == null)
             {
                 return;
             }
 
             var backdrop = new GameObject("ConfirmBackdrop", typeof(Image));
-            backdrop.transform.SetParent(canvas.transform, false);
+            backdrop.transform.SetParent(canvasTransform, false);
             StretchToFillParent(backdrop.GetComponent<RectTransform>());
             backdrop.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.8f);
 
@@ -1887,7 +1886,7 @@ namespace RestaurantIdle.Game
             panelRect.sizeDelta = new Vector2(700, 0);
 
             var panelImage = panelGo.GetComponent<Image>();
-            var panelSprite = Resources.Load<Sprite>("UI/panel-rectangle");
+            var panelSprite = GameAssets.Sprite("UI/panel-rectangle");
             if (panelSprite != null)
             {
                 panelImage.sprite = panelSprite;
@@ -1910,7 +1909,7 @@ namespace RestaurantIdle.Game
             var titleGo = new GameObject("Title", typeof(Text), typeof(LayoutElement));
             titleGo.transform.SetParent(panelGo.transform, false);
             var titleText = titleGo.GetComponent<Text>();
-            titleText.font = Resources.Load<Font>("Fonts/Fredoka");
+            titleText.font = GameAssets.UiFont;
             titleText.fontSize = 30;
             titleText.alignment = TextAnchor.MiddleCenter;
             titleText.color = Color.black;
@@ -1920,7 +1919,7 @@ namespace RestaurantIdle.Game
             var messageGo = new GameObject("Message", typeof(Text), typeof(LayoutElement));
             messageGo.transform.SetParent(panelGo.transform, false);
             var messageText = messageGo.GetComponent<Text>();
-            messageText.font = Resources.Load<Font>("Fonts/Fredoka");
+            messageText.font = GameAssets.UiFont;
             messageText.fontSize = 22;
             messageText.alignment = TextAnchor.MiddleCenter;
             messageText.color = new Color(0.4f, 0.4f, 0.4f);
@@ -1958,8 +1957,7 @@ namespace RestaurantIdle.Game
         /// </summary>
         private void OpenStationDialog(int stationIndex)
         {
-            var canvas = FindFirstObjectByType<Canvas>();
-            if (canvas == null)
+            if (canvasTransform == null)
             {
                 return;
             }
@@ -1968,7 +1966,7 @@ namespace RestaurantIdle.Game
             var station = state.Stations[stationIndex];
 
             var backdrop = new GameObject("StationDialogBackdrop", typeof(Image));
-            backdrop.transform.SetParent(canvas.transform, false);
+            backdrop.transform.SetParent(canvasTransform, false);
             StretchToFillParent(backdrop.GetComponent<RectTransform>());
             backdrop.GetComponent<Image>().color = new Color(0f, 0f, 0f, 0.65f);
 
@@ -1981,7 +1979,7 @@ namespace RestaurantIdle.Game
             panelRect.sizeDelta = new Vector2(780, 0);
 
             var panelImage = panelGo.GetComponent<Image>();
-            var panelSprite = Resources.Load<Sprite>("UI/panel-rectangle");
+            var panelSprite = GameAssets.Sprite("UI/panel-rectangle");
             if (panelSprite != null)
             {
                 panelImage.sprite = panelSprite;
@@ -2004,14 +2002,14 @@ namespace RestaurantIdle.Game
             var titleGo = new GameObject("Title", typeof(Text), typeof(LayoutElement));
             titleGo.transform.SetParent(panelGo.transform, false);
             var titleText = titleGo.GetComponent<Text>();
-            titleText.font = Resources.Load<Font>("Fonts/Fredoka");
+            titleText.font = GameAssets.UiFont;
             titleText.fontSize = 34;
             titleText.alignment = TextAnchor.MiddleCenter;
             titleText.color = Color.black;
             titleText.text = def.Name;
             titleGo.GetComponent<LayoutElement>().preferredHeight = 54;
 
-            var icon = Resources.Load<Sprite>($"Icons/{StationIconNames[stationIndex]}");
+            var icon = GameAssets.Sprite($"Icons/{StationIconNames[stationIndex]}");
             if (icon != null)
             {
                 var iconGo = new GameObject("Icon", typeof(Image), typeof(LayoutElement));
@@ -2031,7 +2029,7 @@ namespace RestaurantIdle.Game
             var infoGo = new GameObject("Info", typeof(Text), typeof(LayoutElement));
             infoGo.transform.SetParent(panelGo.transform, false);
             var infoTextComponent = infoGo.GetComponent<Text>();
-            infoTextComponent.font = Resources.Load<Font>("Fonts/Fredoka");
+            infoTextComponent.font = GameAssets.UiFont;
             infoTextComponent.fontSize = 22;
             infoTextComponent.alignment = TextAnchor.MiddleCenter;
             infoTextComponent.color = new Color(0.35f, 0.35f, 0.35f);
@@ -2180,7 +2178,7 @@ namespace RestaurantIdle.Game
             // Testlauf bei 0 Umsatz schon komplett auf Gruen. Irgendein
             // Sprite muss also gesetzt sein, damit Image.Type.Filled
             // ueberhaupt greift.
-            goalFill.sprite = Resources.Load<Sprite>("UI/panel-rectangle");
+            goalFill.sprite = GameAssets.Sprite("UI/panel-rectangle");
             goalFill.type = Image.Type.Filled;
             goalFill.fillMethod = Image.FillMethod.Horizontal;
             goalFill.color = new Color(0.45f, 0.8f, 0.45f, 0.9f);
@@ -2245,7 +2243,7 @@ namespace RestaurantIdle.Game
             rect.anchoredPosition = anchoredPosition;
 
             var image = go.GetComponent<Image>();
-            var sprite = Resources.Load<Sprite>("UI/panel-rectangle");
+            var sprite = GameAssets.Sprite("UI/panel-rectangle");
             if (sprite != null)
             {
                 image.sprite = sprite;
@@ -2268,7 +2266,7 @@ namespace RestaurantIdle.Game
             rect.offsetMax = offsetMax;
 
             var text = go.GetComponent<Text>();
-            text.font = Resources.Load<Font>("Fonts/Fredoka");
+            text.font = GameAssets.UiFont;
             text.fontSize = fontSize;
             text.alignment = alignment;
             text.color = color;
@@ -2297,7 +2295,7 @@ namespace RestaurantIdle.Game
             // irgendeinem Grund aus (Asset fehlt), bleibt die reine
             // Farbflaeche als Fallback -- kein kaputter, unsichtbarer Button.
             var buttonImage = go.GetComponent<Image>();
-            var buttonSprite = Resources.Load<Sprite>("UI/button-rectangle");
+            var buttonSprite = GameAssets.Sprite("UI/button-rectangle");
             if (buttonSprite != null)
             {
                 buttonImage.sprite = buttonSprite;
@@ -2320,7 +2318,7 @@ namespace RestaurantIdle.Game
             labelGo.transform.SetParent(go.transform, false);
             StretchToFillParent(labelGo.GetComponent<RectTransform>());
             var labelText = labelGo.GetComponent<Text>();
-            labelText.font = Resources.Load<Font>("Fonts/Fredoka");
+            labelText.font = GameAssets.UiFont;
             labelText.fontSize = 28;
             labelText.alignment = TextAnchor.MiddleCenter;
             labelText.color = Color.black;

@@ -44,7 +44,7 @@ namespace RestaurantIdle.Game
             rect.sizeDelta = new Vector2(220, 84);
 
             var background = go.GetComponent<Image>();
-            var sprite = Resources.Load<Sprite>("UI/panel-rectangle");
+            var sprite = GameAssets.Sprite("UI/panel-rectangle");
             if (sprite != null)
             {
                 background.sprite = sprite;
@@ -62,7 +62,7 @@ namespace RestaurantIdle.Game
             labelRect.offsetMax = new Vector2(-10, -8);
 
             var label = labelGo.GetComponent<Text>();
-            label.font = Resources.Load<Font>("Fonts/Fredoka");
+            label.font = GameAssets.UiFont;
             label.fontSize = 26;
             label.alignment = TextAnchor.MiddleCenter;
             label.color = Color.black;

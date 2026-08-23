@@ -42,7 +42,7 @@ namespace RestaurantIdle.Game
             rect.sizeDelta = new Vector2(400, 70);
 
             var text = go.GetComponent<Text>();
-            text.font = Resources.Load<Font>("Fonts/Fredoka");
+            text.font = GameAssets.UiFont;
             text.fontSize = fontSize;
             text.alignment = TextAnchor.MiddleCenter;
             text.color = color;

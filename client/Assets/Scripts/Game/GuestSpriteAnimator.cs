@@ -28,12 +28,12 @@ namespace RestaurantIdle.Game
         {
             spriteRenderer = GetComponent<SpriteRenderer>();
             mover = GetComponent<GuestMover>();
-            idleSprite = Resources.Load<Sprite>("Characters/guest-idle");
+            idleSprite = GameAssets.Sprite("Characters/guest-idle");
             runFrames = new[]
             {
-                Resources.Load<Sprite>("Characters/guest-run0"),
-                Resources.Load<Sprite>("Characters/guest-run1"),
-                Resources.Load<Sprite>("Characters/guest-run2"),
+                GameAssets.Sprite("Characters/guest-run0"),
+                GameAssets.Sprite("Characters/guest-run1"),
+                GameAssets.Sprite("Characters/guest-run2"),
             };
         }
 

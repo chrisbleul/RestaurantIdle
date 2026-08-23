@@ -39,7 +39,7 @@ namespace RestaurantIdle.Game
             shape.radius = 0.15f;
 
             var renderer = ps.GetComponent<ParticleSystemRenderer>();
-            renderer.material = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit"));
+            renderer.sharedMaterial = GameAssets.ParticleMaterial;
 
             ps.Play();
         }

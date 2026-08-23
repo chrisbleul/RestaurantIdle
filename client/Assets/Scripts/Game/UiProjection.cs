@@ -13,12 +13,13 @@ namespace RestaurantIdle.Game
     {
         public static Vector2 WorldToCanvas(RectTransform canvasRect, Vector3 worldPosition)
         {
-            if (canvasRect == null || Camera.main == null)
+            var camera = GameAssets.MainCamera;
+            if (canvasRect == null || camera == null)
             {
                 return Vector2.zero;
             }
 
-            var screenPoint = Camera.main.WorldToScreenPoint(worldPosition);
+            var screenPoint = camera.WorldToScreenPoint(worldPosition);
             var scale = canvasRect.rect.height / Mathf.Max(1f, Screen.height);
             return new Vector2(screenPoint.x * scale, screenPoint.y * scale);
         }
