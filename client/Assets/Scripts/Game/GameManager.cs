@@ -603,14 +603,15 @@ namespace RestaurantIdle.Game
         private const float CameraFramingLerpSpeed = 1.2f;
 
         /// <summary>
-        /// Die Szene ist nicht mehr ueber den ganzen Bildschirm sichtbar:
-        /// Kopfleiste + Zielbalken decken oben rund 21 %, die Aktionsleiste
-        /// unten rund 10 % ab (siehe BuildUi). Die Mitte des FREIEN Bereichs
-        /// liegt damit unter der Bildschirmmitte -- ohne diesen Versatz
-        /// zentriert die Kamera das Restaurant auf einen Punkt, der zum Teil
-        /// hinter der Kopfleiste liegt.
+        /// Anteil der Bildhoehe, den die HUD-Leisten verdecken (Kopfleiste +
+        /// Zielbalken oben, Aktionsleiste unten, siehe BuildUi). Die Kamera
+        /// muss das kennen: sonst rahmt sie das Lokal auf den GANZEN
+        /// Bildschirm, und der obere Teil -- bei einer nach oben wachsenden
+        /// Theke ausgerechnet die neuesten Stationen -- verschwindet hinter
+        /// der Kopfleiste. Genau das war im Portrait-Testlauf zu sehen.
         /// </summary>
-        private const float CameraVerticalScreenBias = 0.055f;
+        private const float HudTopFraction = 0.21f;
+        private const float HudBottomFraction = 0.10f;
         private static readonly Vector3 CameraBackOffset = new Vector3(0f, 0f, -15f);
         private float targetOrthoSize = MinOrthographicSize;
         private Vector3 targetLookAt = Vector3.zero;
@@ -1113,18 +1114,36 @@ namespace RestaurantIdle.Game
             // Eingang und der letzte Warteplatz muessen mit ins Bild --
             // sonst bleibt ausgerechnet die Warteschlange unsichtbar, die
             // die Kapazitaetsgrenze sichtbar machen soll.
+            // Eingang und die vorderen Warteplaetze muessen mit ins Bild --
+            // sonst bleibt ausgerechnet die Warteschlange unsichtbar, die
+            // die Kapazitaetsgrenze sichtbar machen soll. Bewusst nicht der
+            // hinterste Platz: die Schlange ist selten voll, und jeder
+            // zusaetzlich gerahmte Meter zoomt dauerhaft aus dem Lokal
+            // heraus.
             Include(RestaurantLayout.Entrance);
-            Include(RestaurantLayout.QueueSlot(QueueCapacity - 1));
+            Include(RestaurantLayout.QueueSlot(1));
 
             var width = maxRight - minRight + CameraFramingMarginX;
             var height = maxUp - minUp + CameraFramingMarginY;
-            targetOrthoSize = Mathf.Max(MinOrthographicSize, Mathf.Max(width / (2f * cam.aspect), height / 2f));
+
+            // Nur der Streifen zwischen den HUD-Leisten steht wirklich zur
+            // Verfuegung -- die noetige Zoomstufe richtet sich nach ihm,
+            // nicht nach der vollen Bildhoehe.
+            var visibleFraction = 1f - HudTopFraction - HudBottomFraction;
+            targetOrthoSize = Mathf.Max(
+                MinOrthographicSize,
+                Mathf.Max(width / (2f * cam.aspect), height / (2f * visibleFraction)));
 
             // Zielpunkt zurueck in Weltkoordinaten. Die Komponente entlang
             // der Blickrichtung ist bei einer orthografischen Kamera
             // bedeutungslos -- ein beliebiger Punkt der Mittelachse reicht.
+            // Die Mitte des freien Streifens liegt unter der
+            // Bildschirmmitte; der Blickpunkt der Kamera muss deshalb um
+            // genau diese Differenz nach oben, damit der Inhalt in den
+            // Streifen faellt statt auf die Bildmitte.
+            var hudCenterShift = targetOrthoSize * (HudTopFraction - HudBottomFraction);
             targetLookAt = right * ((minRight + maxRight) / 2f)
-                + up * ((minUp + maxUp) / 2f)
+                + up * ((minUp + maxUp) / 2f + hudCenterShift)
                 + forward * (forwardSum / pointCount);
         }
 
@@ -1141,12 +1160,10 @@ namespace RestaurantIdle.Game
             cam.orthographicSize = Mathf.Lerp(cam.orthographicSize, targetOrthoSize, t);
 
             var lookTarget = targetLookAt;
-            // Minus, nicht plus: die Kamera muss nach UNTEN, damit der
-            // Blickpunkt im Bild nach oben in die freie Mitte rutscht. Mit
-            // dem umgekehrten Vorzeichen sass die Theke im ersten
-            // Portrait-Screenshot halb hinter der Kopfleiste.
-            var screenBias = -cam.transform.up * (CameraVerticalScreenBias * 2f * cam.orthographicSize);
-            var desiredPosition = lookTarget + cam.transform.rotation * CameraBackOffset + screenBias;
+            // Der Versatz fuer die HUD-Leisten steckt bereits in
+            // targetLookAt (siehe RecomputeCameraTarget) -- hier bleibt nur
+            // die weiche Fahrt.
+            var desiredPosition = lookTarget + cam.transform.rotation * CameraBackOffset;
             cam.transform.position = Vector3.Lerp(cam.transform.position, desiredPosition, t);
         }
 

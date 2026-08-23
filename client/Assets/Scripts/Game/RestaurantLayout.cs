@@ -44,7 +44,7 @@ namespace RestaurantIdle.Game
         public const float GuestGroundY = 0.4f;
 
         public const int QueueCapacity = 4;
-        private const float QueueSlotDistance = 0.55f;
+        private const float QueueSlotDistance = 0.45f;
 
         public static Vector3 StationPosition(int index) => CounterDirection * (index * StationSpacing);
 
