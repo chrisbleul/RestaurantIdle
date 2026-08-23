@@ -215,7 +215,7 @@ namespace RestaurantIdle.Game
                 // Stationsposition wuerde es das Moebelstueck selbst
                 // verdecken, das es erklaeren soll.
                 stationBadges[hotspot.StationIndex] =
-                    StationBadge.Create(canvasRect, hotspot.transform.position + new Vector3(0f, 0.85f, 0f));
+                    StationBadge.Create(canvasRect, hotspot.transform.position + new Vector3(0f, 0.45f, 0f));
             }
 
             RevealStationsAsNeeded(animate: false);
@@ -586,6 +586,16 @@ namespace RestaurantIdle.Game
         private const float CameraFramingMarginX = 1.4f;
         private const float CameraFramingLerpSpeed = 1.2f;
         private const float CameraLookAtY = 0.4f;
+
+        /// <summary>
+        /// Die Szene ist nicht mehr ueber den ganzen Bildschirm sichtbar:
+        /// Kopfleiste + Zielbalken decken oben rund 21 %, die Aktionsleiste
+        /// unten rund 10 % ab (siehe BuildUi). Die Mitte des FREIEN Bereichs
+        /// liegt damit unter der Bildschirmmitte -- ohne diesen Versatz
+        /// zentriert die Kamera das Restaurant auf einen Punkt, der zum Teil
+        /// hinter der Kopfleiste liegt.
+        /// </summary>
+        private const float CameraVerticalScreenBias = 0.055f;
         private static readonly Vector3 CameraBackOffset = new Vector3(0f, 0f, -15f);
         private float targetOrthoSize = MinOrthographicSize;
         private float targetLookAtX = 2.8f;
@@ -1059,7 +1069,8 @@ namespace RestaurantIdle.Game
             cam.orthographicSize = Mathf.Lerp(cam.orthographicSize, targetOrthoSize, t);
 
             var lookTarget = new Vector3(targetLookAtX, CameraLookAtY, 0f);
-            var desiredPosition = lookTarget + cam.transform.rotation * CameraBackOffset;
+            var screenBias = cam.transform.up * (CameraVerticalScreenBias * 2f * cam.orthographicSize);
+            var desiredPosition = lookTarget + cam.transform.rotation * CameraBackOffset + screenBias;
             cam.transform.position = Vector3.Lerp(cam.transform.position, desiredPosition, t);
         }
 
@@ -1992,6 +2003,12 @@ namespace RestaurantIdle.Game
             fillRect.offsetMin = Vector2.zero;
             fillRect.offsetMax = Vector2.zero;
             goalFill = fillGo.GetComponent<Image>();
+            // Ein Image OHNE Sprite ignoriert fillAmount und zeichnet immer
+            // die volle Flaeche -- der Balken stand deshalb im ersten
+            // Testlauf bei 0 Umsatz schon komplett auf Gruen. Irgendein
+            // Sprite muss also gesetzt sein, damit Image.Type.Filled
+            // ueberhaupt greift.
+            goalFill.sprite = Resources.Load<Sprite>("UI/panel-rectangle");
             goalFill.type = Image.Type.Filled;
             goalFill.fillMethod = Image.FillMethod.Horizontal;
             goalFill.color = new Color(0.45f, 0.8f, 0.45f, 0.9f);

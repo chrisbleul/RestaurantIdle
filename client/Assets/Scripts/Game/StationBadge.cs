@@ -90,6 +90,8 @@ namespace RestaurantIdle.Game
             fillRect.offsetMin = Vector2.zero;
             fillRect.offsetMax = Vector2.zero;
             var fill = fillGo.GetComponent<Image>();
+            // Siehe GameManager.BuildGoalBar: ohne Sprite bleibt fillAmount wirkungslos.
+            fill.sprite = sprite;
             fill.type = Image.Type.Filled;
             fill.fillMethod = Image.FillMethod.Horizontal;
             fill.raycastTarget = false;
