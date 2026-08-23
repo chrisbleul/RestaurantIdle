@@ -695,7 +695,7 @@ namespace RestaurantIdle.Game
             // gerade keine Station frei ist.
             var bouncePoint = Vector3.Lerp(GuestEntrance, GuestExit, 0.15f);
             mover.Redirect(bouncePoint, waitsForService: false);
-            RegisterLostGuest("Die Schlange war zu lang -- ein Gast ist gegangen");
+            RegisterLostGuest("Die Schlange war zu lang -- ein Gast ist gegangen", fromQueue: true);
         }
 
         private static Vector3 QueueSlotPosition(int slot) => QueueFirstSlot + QueueSlotStep * slot;
@@ -750,7 +750,7 @@ namespace RestaurantIdle.Game
                 {
                     queued.Mover.Leave();
                     guestQueue.RemoveAt(i);
-                    RegisterLostGuest("Ein Gast hat das Anstehen aufgegeben");
+                    RegisterLostGuest("Ein Gast hat das Anstehen aufgegeben", fromQueue: true);
                 }
             }
 
@@ -925,9 +925,12 @@ namespace RestaurantIdle.Game
         /// Gast wortlos -- ein Misserfolg, den niemand bemerkt, kann auch
         /// niemanden zum Gegensteuern bewegen.
         /// </summary>
-        private void RegisterLostGuest(string message = "Ein Gast ist unbedient gegangen -- Ruf gesunken")
+        /// <param name="fromQueue">true, wenn der Gast nie einen Platz bekommen hat -- kostet weniger Ruf, siehe BalancingCore.Reputation.</param>
+        private void RegisterLostGuest(string message = "Ein Gast ist unbedient gegangen -- Ruf gesunken", bool fromQueue = false)
         {
-            state.Reputation = Reputation.AfterLost(state.Reputation);
+            state.Reputation = fromQueue
+                ? Reputation.AfterQueueAbandoned(state.Reputation)
+                : Reputation.AfterLost(state.Reputation);
             state.GuestsLost++;
             Toast.Show(canvasTransform, message, new Color(0.98f, 0.72f, 0.68f, 0.95f));
         }
@@ -1049,6 +1052,15 @@ namespace RestaurantIdle.Game
             {
                 return;
             }
+
+            // Eingang und Warteschlange muessen mit ins Bild: Gaeste
+            // betreten die Szene bei GuestEntrance.x und stellen sich nach
+            // links davor an. Ohne diese Zeile bleibt genau der Teil der
+            // Simulation unsichtbar, den die Schlange erst sichtbar machen
+            // soll -- im Fruehspiel (nur Station 0 freigeschaltet) lag der
+            // Eingang komplett ausserhalb des Bildes.
+            minX = Mathf.Min(minX, QueueSlotPosition(QueueCapacity - 1).x);
+            maxX = Mathf.Max(maxX, GuestEntrance.x);
 
             var aspect = Camera.main != null ? Camera.main.aspect : 0.57f;
             var span = maxX - minX + CameraFramingMarginX;

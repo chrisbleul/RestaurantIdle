@@ -65,9 +65,17 @@ public class ReputationTests
     }
 
     [Fact]
+    public void AufgegebenesAnstehenKostetWenigerAlsEinIgnorierterPlatz()
+    {
+        Assert.True(Reputation.AfterQueueAbandoned(50.0) > Reputation.AfterLost(50.0));
+        Assert.True(Reputation.AfterQueueAbandoned(50.0) < 50.0);
+    }
+
+    [Fact]
     public void RufVerlaesstDenGueltigenBereichNie()
     {
         Assert.Equal(Reputation.Max, Reputation.AfterServed(Reputation.Max, 1.5), 6);
         Assert.Equal(Reputation.Min, Reputation.AfterLost(Reputation.Min), 6);
+        Assert.Equal(Reputation.Min, Reputation.AfterQueueAbandoned(Reputation.Min), 6);
     }
 }

@@ -50,12 +50,25 @@ namespace BalancingCore
         public const double MaxGainPerServedGuest = 1.0;
 
         /// <summary>
-        /// Verlust pro Gast, der unbedient wieder geht. Deutlich groesser als
-        /// der Gewinn pro bedientem Gast -- sonst laesst sich eine
+        /// Verlust pro Gast, der unbedient am Platz sitzen bleibt. Groesser
+        /// als der Gewinn pro bedientem Gast -- sonst laesst sich eine
         /// dauerhaft ueberlastete Kueche durch schiere Masse "wegbedienen",
         /// und die Kapazitaetsgrenze bliebe wieder folgenlos.
+        ///
+        /// Erster Live-Testlauf: mit 3.0 war der Ruf nach rund zwei Minuten
+        /// unbeaufsichtigtem Laufen auf 0 -- im Fruehspiel gibt es noch
+        /// keinen Manager, jeder nicht angetippte Gast schlug voll durch.
+        /// 1.5 laesst dieselbe Abwaertsspirale zu, gibt aber Zeit, sie zu
+        /// bemerken.
         /// </summary>
-        public const double LossPerLostGuest = 3.0;
+        public const double LossPerLostGuest = 1.5;
+
+        /// <summary>
+        /// Ein Gast, der das Anstehen aufgibt, wiegt weniger schwer als
+        /// einer, der bereits am Platz sass und ignoriert wurde -- er hat
+        /// nie eine Bedienung bekommen, die man ihm schuldig geblieben ist.
+        /// </summary>
+        public const double LossPerAbandonedQueue = 0.75;
 
         public static double Clamp(double reputation) => Math.Clamp(reputation, Min, Max);
 
@@ -70,5 +83,7 @@ namespace BalancingCore
         }
 
         public static double AfterLost(double reputation) => Clamp(reputation - LossPerLostGuest);
+
+        public static double AfterQueueAbandoned(double reputation) => Clamp(reputation - LossPerAbandonedQueue);
     }
 }
