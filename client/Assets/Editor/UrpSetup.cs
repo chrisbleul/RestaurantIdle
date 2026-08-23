@@ -124,46 +124,62 @@ namespace RestaurantIdle.Editor
         /// </summary>
         public static VolumeProfile EnsurePostProcessProfile()
         {
-            var existing = AssetDatabase.LoadAssetAtPath<VolumeProfile>(PostProcessProfilePath);
-            if (existing != null)
+            var profile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(PostProcessProfilePath);
+            if (profile == null)
             {
-                return existing;
+                if (!AssetDatabase.IsValidFolder(SettingsFolder))
+                {
+                    Directory.CreateDirectory(SettingsFolder);
+                    AssetDatabase.Refresh();
+                }
+
+                profile = ScriptableObject.CreateInstance<VolumeProfile>();
+                AssetDatabase.CreateAsset(profile, PostProcessProfilePath);
             }
 
-            if (!AssetDatabase.IsValidFolder(SettingsFolder))
-            {
-                Directory.CreateDirectory(SettingsFolder);
-                AssetDatabase.Refresh();
-            }
-
-            var profile = ScriptableObject.CreateInstance<VolumeProfile>();
-            AssetDatabase.CreateAsset(profile, PostProcessProfilePath);
+            // Werte bei JEDEM Aufruf setzen, nicht nur beim Anlegen: beim
+            // ersten Versuch wurde das Profil nur erzeugt, falls es fehlte --
+            // eine spaetere Korrektur der Zahlen hier waere auf jedem
+            // Rechner, der das Asset schon hatte, wirkungslos geblieben.
+            // Genau das ist beim Nachjustieren der Helligkeit passiert.
 
             // Neutral statt ACES: ACES zieht die Farben kraeftig ins
             // Filmische und wuerde die flachen CC0-Materialfarben
             // verfaelschen; Neutral bringt nur die Tonwertkurve mit.
-            var tonemapping = profile.Add<Tonemapping>(true);
-            tonemapping.mode.Override(TonemappingMode.Neutral);
+            Get<Tonemapping>(profile).mode.Override(TonemappingMode.Neutral);
 
-            var colorAdjustments = profile.Add<ColorAdjustments>(true);
-            colorAdjustments.contrast.Override(12f);
-            colorAdjustments.saturation.Override(6f);
+            var colorAdjustments = Get<ColorAdjustments>(profile);
+            // Negativ: die Tonwertkurve hebt die ohnehin hellen Sand- und
+            // Weisstoene der Szene sichtbar an -- ohne Gegensteuern wirkte
+            // der Innenboden im Testbild ausgewaschen statt warm.
+            colorAdjustments.postExposure.Override(-0.35f);
+            colorAdjustments.contrast.Override(18f);
+            colorAdjustments.saturation.Override(4f);
 
-            var bloom = profile.Add<Bloom>(true);
-            bloom.threshold.Override(1.05f);
-            bloom.intensity.Override(0.35f);
-            bloom.scatter.Override(0.6f);
+            var bloom = Get<Bloom>(profile);
+            // Schwelle deutlich ueber Weiss: bei 1.05 fing die grosse helle
+            // Bodenflaeche selbst an zu glimmen, was das Bild zusaetzlich
+            // flach gemacht hat. Jetzt greift Bloom nur noch auf echten
+            // Lichtern (Fenster, Muenz-Partikel).
+            bloom.threshold.Override(1.3f);
+            bloom.intensity.Override(0.22f);
+            bloom.scatter.Override(0.55f);
 
             // Randabdunklung zieht den Blick in die Bildmitte -- dorthin,
             // wo Theke und Warteschlange stehen.
-            var vignette = profile.Add<Vignette>(true);
-            vignette.intensity.Override(0.26f);
-            vignette.smoothness.Override(0.5f);
+            var vignette = Get<Vignette>(profile);
+            vignette.intensity.Override(0.34f);
+            vignette.smoothness.Override(0.45f);
 
             EditorUtility.SetDirty(profile);
             AssetDatabase.SaveAssets();
-            Debug.Log("Post-Processing-Profil angelegt: " + PostProcessProfilePath);
             return profile;
+        }
+
+        /// <summary>Holt eine Volume-Komponente aus dem Profil oder legt sie an -- macht EnsurePostProcessProfile wiederholbar.</summary>
+        private static T Get<T>(VolumeProfile profile) where T : VolumeComponent
+        {
+            return profile.TryGet<T>(out var component) ? component : profile.Add<T>(true);
         }
 
         private static bool SetInt(SerializedObject serialized, string field, int value)
