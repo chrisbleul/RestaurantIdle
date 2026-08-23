@@ -130,6 +130,21 @@ namespace RestaurantIdle.Editor
             // und Bodenton bekommen nach oben, zur Seite und nach unten
             // gerichtete Flaechen unterschiedliche Grundhelligkeit, und die
             // Kanten trennen sich auch dort, wo kein direktes Licht hinfaellt.
+            // Globales Volume mit dem Bildbearbeitungs-Profil (siehe
+            // UrpSetup.EnsurePostProcessProfile) und Post-Processing an der
+            // Kamera einschalten -- ohne beides bleibt das Profil wirkungslos.
+            var volumeObject = new GameObject("Global Volume", typeof(UnityEngine.Rendering.Volume));
+            var volume = volumeObject.GetComponent<UnityEngine.Rendering.Volume>();
+            volume.isGlobal = true;
+            volume.sharedProfile = UrpSetup.EnsurePostProcessProfile();
+
+            var cameraData = cameraObject.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+            cameraData.renderPostProcessing = true;
+            // Keine zusaetzliche Nachbearbeitungs-Kantenglaettung: MSAA 4x
+            // laeuft bereits ueber die Pipeline (UrpSetup), beides
+            // uebereinander kostet doppelt und bringt nichts.
+            cameraData.antialiasing = UnityEngine.Rendering.Universal.AntialiasingMode.None;
+
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
             RenderSettings.ambientSkyColor = new Color(0.62f, 0.68f, 0.76f);
             RenderSettings.ambientEquatorColor = new Color(0.56f, 0.55f, 0.53f);

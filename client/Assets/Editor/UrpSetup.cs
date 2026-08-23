@@ -20,6 +20,7 @@ namespace RestaurantIdle.Editor
         private const string SettingsFolder = "Assets/Settings";
         private const string RendererPath = SettingsFolder + "/UniversalRendererData.asset";
         private const string PipelineAssetPath = SettingsFolder + "/UniversalRenderPipelineAsset.asset";
+        private const string PostProcessProfilePath = SettingsFolder + "/PostProcessProfile.asset";
 
         [InitializeOnLoadMethod]
         private static void EnsureUrpActive()
@@ -105,6 +106,64 @@ namespace RestaurantIdle.Editor
             EditorUtility.SetDirty(asset);
             AssetDatabase.SaveAssets();
             Debug.Log($"URP-Bildqualitaet gesetzt: MSAA {MsaaSamples}x, weiche Schatten, Schattenreichweite {ShadowDistance}.");
+        }
+
+        /// <summary>
+        /// Bildbearbeitungs-Profil fuer die Szene. Ohne Post-Processing geht
+        /// das gerenderte Bild voellig unbearbeitet auf den Schirm --
+        /// lineare Helligkeiten, keine Tonwertkurve, keine Randabdunklung.
+        /// Genau das laesst eine Low-Poly-Szene "roh" und hart wirken,
+        /// unabhaengig von Kantenglaettung und Schatten.
+        ///
+        /// Bewusst zurueckhaltend dosiert: das Spiel laeuft auf dem Handy,
+        /// Bloom ist der teuerste Posten davon und soll die Szene nur
+        /// anwaermen, nicht leuchten lassen.
+        ///
+        /// Legt das Profil an, falls es fehlt, und liefert es zurueck --
+        /// CIBuild haengt es an ein globales Volume in der Szene.
+        /// </summary>
+        public static VolumeProfile EnsurePostProcessProfile()
+        {
+            var existing = AssetDatabase.LoadAssetAtPath<VolumeProfile>(PostProcessProfilePath);
+            if (existing != null)
+            {
+                return existing;
+            }
+
+            if (!AssetDatabase.IsValidFolder(SettingsFolder))
+            {
+                Directory.CreateDirectory(SettingsFolder);
+                AssetDatabase.Refresh();
+            }
+
+            var profile = ScriptableObject.CreateInstance<VolumeProfile>();
+            AssetDatabase.CreateAsset(profile, PostProcessProfilePath);
+
+            // Neutral statt ACES: ACES zieht die Farben kraeftig ins
+            // Filmische und wuerde die flachen CC0-Materialfarben
+            // verfaelschen; Neutral bringt nur die Tonwertkurve mit.
+            var tonemapping = profile.Add<Tonemapping>(true);
+            tonemapping.mode.Override(TonemappingMode.Neutral);
+
+            var colorAdjustments = profile.Add<ColorAdjustments>(true);
+            colorAdjustments.contrast.Override(12f);
+            colorAdjustments.saturation.Override(6f);
+
+            var bloom = profile.Add<Bloom>(true);
+            bloom.threshold.Override(1.05f);
+            bloom.intensity.Override(0.35f);
+            bloom.scatter.Override(0.6f);
+
+            // Randabdunklung zieht den Blick in die Bildmitte -- dorthin,
+            // wo Theke und Warteschlange stehen.
+            var vignette = profile.Add<Vignette>(true);
+            vignette.intensity.Override(0.26f);
+            vignette.smoothness.Override(0.5f);
+
+            EditorUtility.SetDirty(profile);
+            AssetDatabase.SaveAssets();
+            Debug.Log("Post-Processing-Profil angelegt: " + PostProcessProfilePath);
+            return profile;
         }
 
         private static bool SetInt(SerializedObject serialized, string field, int value)
