@@ -19,9 +19,24 @@ namespace RestaurantIdle.Game
     {
         private const float BackendSyncIntervalSeconds = 30f;
 
-        // Platzhalter -- PLAN.md Abschnitt 2: "k so waehlen, dass Reset nach
-        // ~1 Std. lohnt", muss im Playtest kalibriert werden (siehe Prestige.cs).
-        private const double PrestigeK = 1.0;
+        // PLAN.md Abschnitt 2: "k so waehlen, dass Reset nach ~1 Std.
+        // lohnt", endgueltige Kalibrierung erst mit Playtestdaten (PLANv3
+        // Phase H). k = 1.0 war aber nicht einmal als Platzhalter tragbar:
+        // Sterne = k * sqrt(Lifetime-Umsatz), bei einem Lifetime-Umsatz von
+        // 2.72 (zwei bediente Gaeste im Testlauf!) also bereits 1.65 Sterne.
+        // Der Renovieren-Button stand damit ab dem ersten Verkauf auf
+        // "lohnt sich" und war als Signal wertlos. 0.035 verschiebt die
+        // erste sinnvolle Renovierung in die Gegend von ~10k Lifetime-
+        // Umsatz (rund 3.5 Sterne).
+        private const double PrestigeK = 0.035;
+
+        /// <summary>
+        /// Untergrenze, ab der Renovieren ueberhaupt angeboten wird. Ohne
+        /// sie waere der Button ab dem ersten Bruchteil eines Sterns aktiv
+        /// -- und ein Reset, der 0.2 Sterne (+0.4 % Ertrag) einbringt,
+        /// kostet mehr als er bringt.
+        /// </summary>
+        private const double MinPrestigeStarsForReset = 3.0;
 
         // PLANv3.md K3: Renovierungspunkte wurden berechnet/angezeigt, aber
         // nirgends als Multiplikator verwendet -- ein Reset war reiner
@@ -1468,7 +1483,7 @@ namespace RestaurantIdle.Game
         private void PrestigeReset()
         {
             var gain = Prestige.StarsGainedFromReset(lifetimeRevenue, PrestigeK, prestigeStars);
-            if (gain <= BigDouble.Zero)
+            if (gain < MinPrestigeStarsForReset)
             {
                 return;
             }
@@ -1622,8 +1637,11 @@ namespace RestaurantIdle.Game
             marketingButtonImage.color = marketingButtonRef.interactable ? AffordableButtonColor : DefaultButtonColor;
 
             var prestigeGain = Prestige.StarsGainedFromReset(lifetimeRevenue, PrestigeK, prestigeStars);
-            prestigeButtonLabel.text = $"Renovieren  +{NumberFormat.Format(prestigeGain)}\n{NumberFormat.Format(prestigeStars)} Punkte";
-            prestigeButtonRef.interactable = prestigeGain > BigDouble.Zero;
+            var canRenovate = prestigeGain >= MinPrestigeStarsForReset;
+            prestigeButtonLabel.text = canRenovate
+                ? $"Renovieren  +{NumberFormat.Format(prestigeGain)}\n{NumberFormat.Format(prestigeStars)} Punkte"
+                : $"Renovieren ab {MinPrestigeStarsForReset:0} Punkten\njetzt: {NumberFormat.Format(prestigeGain)}";
+            prestigeButtonRef.interactable = canRenovate;
             prestigeButtonImage.color = prestigeButtonRef.interactable ? AffordableButtonColor : DefaultButtonColor;
         }
 
