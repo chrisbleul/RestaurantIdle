@@ -25,12 +25,22 @@ namespace RestaurantIdle.Editor
     /// </summary>
     public static class GameViewPortrait
     {
-        private const string SizeLabel = "RestaurantIdle Portrait";
-        private const int TargetWidth = 1080;
-        private const int TargetHeight = 1920;
+        /// <summary>
+        /// Zweite, kleine Groesse im selben Seitenverhaeltnis (9:16). Grund:
+        /// bei 1080x1920 passt der Game-View nicht ins Editor-Fenster und
+        /// wird mit 0.25x angezeigt -- diese Verkleinerung wirft jede
+        /// Kantenglaettung weg, bevor ein Screenshot sie zeigen koennte.
+        /// Eine Pruefung, ob MSAA wirklich greift, ist damit unmoeglich.
+        /// 405x720 laesst sich mit Skalierung 1x darstellen, also Pixel fuer
+        /// Pixel so, wie gerendert wurde.
+        /// </summary>
+        [MenuItem("RestaurantIdle/Game-View auf Portrait klein (405x720)")]
+        public static void ApplySmall() => Apply("RestaurantIdle Portrait klein", 405, 720);
 
         [MenuItem("RestaurantIdle/Game-View auf Portrait (1080x1920)")]
-        public static void Apply()
+        public static void Apply() => Apply("RestaurantIdle Portrait", 1080, 1920);
+
+        private static void Apply(string sizeLabel, int targetWidth, int targetHeight)
         {
             try
             {
@@ -47,7 +57,7 @@ namespace RestaurantIdle.Editor
                 }
 
                 var groupType = group.GetType();
-                var index = IndexOfExistingSize(groupType, group);
+                var index = IndexOfExistingSize(groupType, group, sizeLabel);
                 if (index < 0)
                 {
                     var sizeType = editorAssembly.GetType("UnityEditor.GameViewSize");
@@ -56,13 +66,13 @@ namespace RestaurantIdle.Editor
                     var newSize = constructor.Invoke(new[]
                     {
                         Enum.Parse(sizeTypeEnum, "FixedResolution"),
-                        (object)TargetWidth,
-                        TargetHeight,
-                        SizeLabel,
+                        (object)targetWidth,
+                        targetHeight,
+                        sizeLabel,
                     });
 
                     groupType.GetMethod("AddCustomSize").Invoke(group, new[] { newSize });
-                    index = IndexOfExistingSize(groupType, group);
+                    index = IndexOfExistingSize(groupType, group, sizeLabel);
                 }
 
                 var gameViewType = editorAssembly.GetType("UnityEditor.GameView");
@@ -71,7 +81,7 @@ namespace RestaurantIdle.Editor
                     .GetMethod("SizeSelectionCallback", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
                     ?.Invoke(window, new object[] { index, null });
 
-                Debug.Log($"Game-View auf {TargetWidth}x{TargetHeight} (Index {index}) gesetzt.");
+                Debug.Log($"Game-View auf {targetWidth}x{targetHeight} (Index {index}) gesetzt.");
             }
             catch (Exception e)
             {
@@ -79,7 +89,7 @@ namespace RestaurantIdle.Editor
             }
         }
 
-        private static int IndexOfExistingSize(Type groupType, object group)
+        private static int IndexOfExistingSize(Type groupType, object group, string sizeLabel)
         {
             var totalCount = (int)groupType.GetMethod("GetTotalCount").Invoke(group, null);
             var getSize = groupType.GetMethod("GetGameViewSize");
@@ -87,7 +97,7 @@ namespace RestaurantIdle.Editor
             {
                 var size = getSize.Invoke(group, new object[] { i });
                 var name = size.GetType().GetProperty("baseText")?.GetValue(size) as string;
-                if (name == SizeLabel)
+                if (name == sizeLabel)
                 {
                     return i;
                 }
