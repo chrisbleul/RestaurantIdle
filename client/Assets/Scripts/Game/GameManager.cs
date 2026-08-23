@@ -717,7 +717,7 @@ namespace RestaurantIdle.Game
             }
 
             // VIPs sind etwas groesser skaliert, ihr Schatten entsprechend.
-            GroundShadow.Attach(guest.transform, isVip ? 0.34f : 0.3f, 0.32f);
+            GroundShadow.Attach(guest.transform, isVip ? 0.42f : 0.38f, 0.3f);
 
             var mover = guest.AddComponent<GuestMover>();
             mover.SpeedMultiplier = UnityEngine.Random.Range(0.85f, 1.2f);
@@ -1437,7 +1437,7 @@ namespace RestaurantIdle.Game
                 - RestaurantLayout.GuestSide * 0.55f
                 + new Vector3(0f, RestaurantLayout.GuestGroundY, 0f);
 
-            GroundShadow.Attach(worker.transform, 0.28f, 0.3f);
+            GroundShadow.Attach(worker.transform, 0.36f, 0.28f);
 
             var staff = worker.AddComponent<StaffWorker>();
             staff.Init(staffSpot, state.Stations[i].CycleSeconds(StationCatalog.All[i]));
