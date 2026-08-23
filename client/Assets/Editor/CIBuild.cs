@@ -145,7 +145,7 @@ namespace RestaurantIdle.Editor
         }
 
         /// <summary>Abstand der Rueckwand von der Thekenlinie, Richtung Wandseite (im Bild rechts).</summary>
-        private const float WallOffset = 1.5f;
+        private const float WallOffset = 1.15f;
 
         private const float CounterHeight = 1.05f;
         private const float WallHeight = 2.4f;
@@ -309,7 +309,7 @@ namespace RestaurantIdle.Editor
             for (var i = 0; i < 3; i++)
             {
                 var anchor = RestaurantLayout.StationPosition(i * 2)
-                    + RestaurantLayout.GuestSide * 2.4f
+                    + RestaurantLayout.GuestSide * 1.95f
                     - RestaurantLayout.CounterDirection * 0.5f;
 
                 InstantiateModel("Assets/Models/Furniture/tableCloth.fbx", $"Gasttisch_{i}",

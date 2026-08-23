@@ -1114,13 +1114,16 @@ namespace RestaurantIdle.Game
             // Eingang und der letzte Warteplatz muessen mit ins Bild --
             // sonst bleibt ausgerechnet die Warteschlange unsichtbar, die
             // die Kapazitaetsgrenze sichtbar machen soll.
-            // Eingang und die vorderen Warteplaetze muessen mit ins Bild --
-            // sonst bleibt ausgerechnet die Warteschlange unsichtbar, die
-            // die Kapazitaetsgrenze sichtbar machen soll. Bewusst nicht der
-            // hinterste Platz: die Schlange ist selten voll, und jeder
-            // zusaetzlich gerahmte Meter zoomt dauerhaft aus dem Lokal
-            // heraus.
-            Include(RestaurantLayout.Entrance);
+            // Der Wartebereich vor der ersten Station und die vorderen
+            // Warteplaetze muessen mit ins Bild -- sonst bleibt ausgerechnet
+            // die Warteschlange unsichtbar, die die Kapazitaetsgrenze
+            // sichtbar machen soll. Bewusst weder der Eingang noch der
+            // hinterste Platz: die Schlange ist selten voll, und im
+            // Fruehspiel (zwei sichtbare Stationen) haette der Eingang
+            // allein das Bild nach unten gezogen -- die Stationen sassen
+            // dann oben am Rand, waehrend zwei Drittel des Bildes leeren
+            // Laufweg zeigten.
+            Include(RestaurantLayout.GuestStandPosition(RestaurantLayout.StationPosition(0)));
             Include(RestaurantLayout.QueueSlot(1));
 
             var width = maxRight - minRight + CameraFramingMarginX;

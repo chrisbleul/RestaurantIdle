@@ -44,23 +44,31 @@ namespace RestaurantIdle.Game
         public const float GuestGroundY = 0.4f;
 
         public const int QueueCapacity = 4;
-        private const float QueueSlotDistance = 0.45f;
+        private const float QueueSlotDistance = 0.5f;
 
         public static Vector3 StationPosition(int index) => CounterDirection * (index * StationSpacing);
 
         public static Vector3 GuestStandPosition(Vector3 stationPosition) =>
             OnGround(stationPosition + GuestSide * GuestStandDistance);
 
-        /// <summary>Eingang: unterhalb der ersten Station, auf der Gastseite.</summary>
+        /// <summary>
+        /// Die Warteschlange beginnt direkt am Warteplatz der ersten Station
+        /// und laeuft von dort nach unten aus dem Bild -- nicht seitlich:
+        /// im Portrait-Format ist der sichtbare Streifen nur rund drei
+        /// Welteinheiten BREIT (orthographicSize * 2 * 0.5625), aber ein
+        /// Vielfaches davon hoch. Alles, was zur Seite ausweicht, liegt
+        /// sofort ausserhalb des Bildes.
+        /// </summary>
+        public static Vector3 QueueSlot(int slot) =>
+            OnGround(GuestStandPosition(StationPosition(0)) - CounterDirection * (QueueSlotDistance * (slot + 1)));
+
+        /// <summary>Eingang unterhalb des letzten Warteplatzes -- Gaeste laufen von dort ins Bild herein.</summary>
         public static Vector3 Entrance =>
-            OnGround(StationPosition(0) + GuestSide * GuestStandDistance - CounterDirection * 2.3f);
+            OnGround(QueueSlot(QueueCapacity - 1) - CounterDirection * 1.1f);
 
         /// <summary>Ausgang seitlich versetzt, damit hinausgehende Gaeste nicht durch die Schlange laufen.</summary>
         public static Vector3 Exit =>
-            OnGround(StationPosition(0) + GuestSide * 2.8f - CounterDirection * 3.6f);
-
-        public static Vector3 QueueSlot(int slot) =>
-            OnGround(Entrance - CounterDirection * (QueueSlotDistance * (slot + 1)));
+            OnGround(Entrance + GuestSide * 1.6f - CounterDirection * 1.2f);
 
         private static Vector3 OnGround(Vector3 position) => new Vector3(position.x, GuestGroundY, position.z);
     }
