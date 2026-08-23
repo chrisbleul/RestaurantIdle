@@ -1377,19 +1377,33 @@ namespace RestaurantIdle.Game
                 return;
             }
 
-            var worker = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            worker.name = $"Staff_{i}";
-            worker.transform.localScale = new Vector3(0.22f, 0.35f, 0.22f);
-            Destroy(worker.GetComponent<Collider>());
+            // Charakter-Sprite statt eingefaerbter Kapsel -- dieselbe
+            // Begruendung wie bei den Gaesten (PLANv3 Abschnitt 5,
+            // "Charaktere statt Kapseln"). Die Kapsel war der letzte
+            // Platzhalter dieser Art in der Szene und stand als weisser
+            // Zylinder neben lauter Charakteren.
+            var worker = new GameObject($"Staff_{i}", typeof(SpriteRenderer));
+            var spriteRenderer = worker.GetComponent<SpriteRenderer>();
+            spriteRenderer.sprite = Resources.Load<Sprite>("Characters/guest-idle");
 
-            var renderer = worker.GetComponent<MeshRenderer>();
-            renderer.sharedMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
+            // Deutlich anderer Farbton als jeder Gast: der Spieler muss auf
+            // einen Blick sehen koennen, welche Station bereits automatisch
+            // bedient wird.
+            spriteRenderer.color = new Color(0.55f, 0.75f, 1f);
+            worker.transform.localScale = Vector3.one * (GuestSpriteScale * 0.9f);
+            if (Camera.main != null)
             {
-                color = Color.white,
-            };
+                worker.transform.rotation = Camera.main.transform.rotation;
+            }
+
+            // Auf der Wandseite der Station -- der Warteplatz davor gehoert
+            // dem Gast (RestaurantLayout.GuestStandPosition).
+            var staffSpot = stationPosition
+                - RestaurantLayout.GuestSide * 0.55f
+                + new Vector3(0f, RestaurantLayout.GuestGroundY, 0f);
 
             var staff = worker.AddComponent<StaffWorker>();
-            staff.Init(stationPosition + new Vector3(0.3f, 0.3f, 0f), state.Stations[i].CycleSeconds(StationCatalog.All[i]));
+            staff.Init(staffSpot, state.Stations[i].CycleSeconds(StationCatalog.All[i]));
         }
 
         /// <summary>
