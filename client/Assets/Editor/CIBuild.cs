@@ -121,16 +121,34 @@ namespace RestaurantIdle.Editor
         }
 
         /// <summary>
-        /// PLANv2.md Abschnitt 6/8: erster sichtbarer Baustein von Location 1
-        /// (Limonadenstand) -- Kenney Furniture Kit (CC0). Noch reine
-        /// Platzierung, keine Anbindung an GameManager/Balancing (folgt in
-        /// einem eigenen Schritt, sobald die Optik steht).
+        /// Location 1 (Limonadenstand/Cafe) -- Kenney Furniture Kit (CC0).
+        ///
+        /// Vorher bestand die Szene aus einer Theke, sieben frei auf dem
+        /// Rasen stehenden Kuechengeraeten und vier Bloecken aus dem
+        /// Modular-Buildings-Kit, die zusammen nur das linke Drittel der
+        /// Reihe abdeckten -- im Bild ein weisser Kasten neben der Theke,
+        /// nicht als Gebaeude lesbar. Nutzer-Feedback dazu zweimal: "das
+        /// Design gefaellt mir weiterhin nicht".
+        ///
+        /// Jetzt ein zusammenhaengender Raum: Innenboden unter der ganzen
+        /// Reihe, durchgehende Rueckwand mit Fenstern, Gastbereich mit
+        /// Tischen/Stuehlen dort, wo die Gaeste tatsaechlich laufen und
+        /// anstehen (siehe GameManager.GuestEntrance/QueueSlotPosition),
+        /// plus Deko an den Raendern.
         /// </summary>
         // Kenney-Furniture-Kit-Modelle sind nativ ~4x zu gross (Thekenhoehe
         // 4.2 Einheiten statt der erwarteten ~1) -- 0.25 bringt sie auf
         // plausible Meter-Massstab (Theke ~1.05m hoch), gemessen per
         // MeshRenderer.bounds ueber MCP statt geraten.
         private const float FurnitureScale = 0.25f;
+
+        // Raumgrenzen. Die Stationsreihe laeuft von x=0 (Theke) bis x=5.85
+        // (siehe RemainingStations), die Gaeste betreten die Szene links
+        // davon und stehen bis x=-2.2 an -- der Raum muss beides fassen.
+        private const float RoomMinX = -3.2f;
+        private const float RoomMaxX = 7.2f;
+        private const float RoomBackZ = 1.7f;
+        private const float RoomFrontZ = -2.9f;
 
         private static void BuildLocation1Placeholder()
         {
@@ -144,11 +162,48 @@ namespace RestaurantIdle.Editor
                 color = new Color(0.55f, 0.75f, 0.45f),
             };
 
+            BuildInteriorFloor();
+            BuildStations();
+            BuildBackWall();
+            BuildGuestArea();
+        }
+
+        /// <summary>
+        /// Innenboden als eigene Flaeche knapp ueber dem Rasen. Ohne ihn
+        /// stehen Theke und Geraete direkt auf der Wiese -- das liest sich
+        /// als Picknick, nicht als Lokal. Bewusst eine eingefaerbte Plane
+        /// statt gekachelter floorFull-Modelle: fuer eine einfarbige Flaeche
+        /// waeren rund 50 zusaetzliche GameObjects reine Verschwendung.
+        /// </summary>
+        private static void BuildInteriorFloor()
+        {
+            var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
+            floor.name = "InteriorFloor";
+            // Plane ist nativ 10x10 Einheiten -- Skalierung entsprechend.
+            var width = RoomMaxX - RoomMinX;
+            var depth = RoomBackZ - RoomFrontZ;
+            floor.transform.position = new Vector3((RoomMinX + RoomMaxX) / 2f, 0.01f, (RoomFrontZ + RoomBackZ) / 2f);
+            floor.transform.localScale = new Vector3(width / 10f, 1f, depth / 10f);
+            floor.GetComponent<MeshRenderer>().sharedMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
+            {
+                color = new Color(0.78f, 0.66f, 0.5f),
+            };
+
+            // Der Boden darf keine Taps abfangen -- GameManager.HandleStationTap
+            // wertet jeden Raycast-Treffer aus und wuerde sonst nie die
+            // Station dahinter erreichen.
+            Object.DestroyImmediate(floor.GetComponent<MeshCollider>());
+        }
+
+        private static void BuildStations()
+        {
             // Theke: Pivot liegt an einer Ecke, nicht in der Mitte (Kenney-
             // Konvention fuers Aneinanderreihen von Modulen) -- deshalb bei
             // 0/0/0 platziert statt zentriert.
             InstantiateModel("Assets/Models/Furniture/kitchenBar.fbx", "Station_Kaffeemaschine_Theke",
                 Vector3.zero, Quaternion.identity, FurnitureScale);
+            InstantiateModel("Assets/Models/Furniture/kitchenBarEnd.fbx", "Theke_Abschluss",
+                new Vector3(-1.05f, 0f, 0f), Quaternion.identity, FurnitureScale);
 
             // Auf der Thekenoberflaeche (Thekenhoehe 1.05m nach Skalierung),
             // ungefaehr mittig ueber der Theke (deren eigener Mittelpunkt
@@ -157,11 +212,10 @@ namespace RestaurantIdle.Editor
                 new Vector3(0.5f, 1.05f, 0.25f), Quaternion.identity, FurnitureScale, stationIndex: 0);
 
             InstantiateModel("Assets/Models/Furniture/stoolBar.fbx", "Hocker",
-                new Vector3(0.5f, 0f, -0.6f), Quaternion.identity, FurnitureScale);
+                new Vector3(0.5f, 0f, -0.75f), Quaternion.identity, FurnitureScale);
 
             // Restliche 6 Stationen (StationCatalog.All Index 1-6) als Reihe
-            // auf dem Boden -- noch ohne eigene Theke, reine Platzierung wie
-            // bei Station 0. Modelle sind Annaeherungen (kein 1:1-Match zu
+            // auf dem Boden -- Modelle sind Annaeherungen (kein 1:1-Match zu
             // jedem Stationsnamen im Kenney-Kit vorhanden).
             var remainingStations = new (string Model, string StationName)[]
             {
@@ -179,63 +233,120 @@ namespace RestaurantIdle.Editor
                 var x = 1.6f + i * 0.85f;
                 InstantiateModel($"Assets/Models/Furniture/{model}", $"Station_{stationName}",
                     new Vector3(x, 0f, 0f), Quaternion.identity, FurnitureScale, stationIndex: i + 1);
+
+                // Haengeschrank ueber jeder zweiten Station -- fuellt die
+                // sonst voellig leere Wandflaeche zwischen Geraetereihe und
+                // Wandoberkante, ohne den Blick auf die Station zu nehmen.
+                if (i % 2 == 0)
+                {
+                    InstantiateModel("Assets/Models/Furniture/kitchenCabinetUpper.fbx", $"Haengeschrank_{i}",
+                        new Vector3(x, 1.35f, RoomBackZ - 0.15f), Quaternion.identity, FurnitureScale);
+                }
             }
 
-            BuildBackWall();
+            InstantiateModel("Assets/Models/Furniture/hoodModern.fbx", "Dunstabzug",
+                new Vector3(2.45f, 1.3f, 0.1f), Quaternion.identity, FurnitureScale);
         }
 
         /// <summary>
-        /// Restaurant-Rueckwand hinter der Stationsreihe (Kenney Modular
-        /// Buildings, CC0) -- Nutzerwunsch: der Hintergrund soll wie ein
-        /// Restaurant aussehen statt nur gruene Wiese. Selber Massstab-
-        /// Ansatz wie bei Location1Placeholder (FurnitureScale), noch nicht
-        /// per MeshRenderer.bounds vermessen -- ggf. nach dem ersten
-        /// Screenshot nachjustieren.
+        /// Durchgehende Rueckwand ueber die ganze Raumbreite. Die Breite
+        /// eines Segments wird am Modell gemessen statt geschaetzt -- genau
+        /// diese Schaetzerei war beim vorherigen Wandversuch (Modular
+        /// Buildings mit FurnitureScale) die Fehlerquelle: die Wand war
+        /// 0.156 Einheiten hoch und damit unsichtbar.
         /// </summary>
-        // PLANv3-Nachfolge, Nutzer-Feedback ("das spiel muss viel besser
-        // werden"): die Rueckwand nutzte bisher FurnitureScale (0.25) --
-        // genau der Platzhalter, den der urspruengliche Kommentar hier
-        // ("noch nicht per MeshRenderer.bounds vermessen") als provisorisch
-        // markiert hatte. Gemessen: building-block.fbx ist bei Scale 1
-        // 1.0 x 0.625 x 1.0 -- bei 0.25 also nur 0.156 Einheiten hoch,
-        // praktisch eine unsichtbare Bodenleiste. Die komplette Rueckwand
-        // war dadurch effektiv nie sichtbar. Eigene, echt vermessene
-        // BuildingScale statt FurnitureScale.
-        //
-        // 3.2 (Zielhoehe ~2 Einheiten, deutlich hoeher als die Stationen)
-        // war beim ersten Screenshot-Abgleich massiv zu gross fuer die
-        // mitwachsende Kamera aus dem Fun-Pass -- bei minimalem Zoom
-        // (Fruehspiel, ein bis zwei Stationen sichtbar) fuellte die Wand
-        // fast den ganzen Bildschirm. 1.0 (Wandhoehe = native 0.625, in
-        // derselben Groessenordnung wie die Stationen) passt sich der
-        // engen Fruehspiel-Kamera unter, ohne dass die Wand komplett
-        // verschwindet -- Kompromiss statt einer fuer die feste alte
-        // Kamera "richtig" gemessenen, aber fuer die neue dynamische
-        // Kamera zu grossen Zahl.
-        private const float BuildingScale = 1.0f;
-
         private static void BuildBackWall()
         {
-            const float wallZ = 1.5f;
-            const float segmentSpacing = BuildingScale; // native Breite 1.0 -> Segmente stossen nahtlos aneinander.
-            var wallSegments = new[] { "building-block", "building-door-window", "building-block", "building-window" };
-
-            for (var i = 0; i < wallSegments.Length; i++)
+            var segmentWidth = MeasureWidth("Assets/Models/Furniture/wall.fbx") * FurnitureScale;
+            if (segmentWidth <= 0.01f)
             {
-                var x = -1f + i * segmentSpacing;
-                InstantiateModel($"Assets/Models/Building/{wallSegments[i]}.fbx", $"Wall_{i}",
-                    new Vector3(x, 0f, wallZ), Quaternion.Euler(0f, 180f, 0f), BuildingScale);
+                Debug.LogWarning("Wandbreite nicht messbar -- Rueckwand uebersprungen.");
+                return;
             }
 
-            // Bewusst HOEHER als die architektonisch "korrekte" Position
-            // auf der Wandoberkante (native Wandhoehe 0.625 * BuildingScale):
-            // beim Screenshot-Abgleich verschwand die Awning dort fast
-            // komplett hinter der vorderen Station. Weiter oben sitzend
-            // zeichnet sie eine klar sichtbare Dachlinie gegen den Himmel
-            // -- das liest sich als "Restaurant" deutlich staerker als
-            // physikalische Genauigkeit an dieser Stelle bringt.
-            InstantiateModel("Assets/Models/Building/roof-flat-awning-a.fbx", "Awning",
-                new Vector3(0.5f, 1.3f, 0.9f), Quaternion.identity, BuildingScale);
+            var count = Mathf.CeilToInt((RoomMaxX - RoomMinX) / segmentWidth);
+            for (var i = 0; i < count; i++)
+            {
+                // Jedes zweite Segment mit Fenster: eine geschlossene Wand
+                // ueber die volle Breite wirkt wie eine Mauer, Fenster
+                // machen daraus einen Gastraum.
+                var model = i % 2 == 1 ? "wallWindow" : "wall";
+                InstantiateModel($"Assets/Models/Furniture/{model}.fbx", $"Wall_{i}",
+                    new Vector3(RoomMinX + i * segmentWidth, 0f, RoomBackZ), Quaternion.identity, FurnitureScale);
+            }
+
+            Debug.Log($"Rueckwand: {count} Segmente a {segmentWidth:F2} Einheiten.");
+        }
+
+        /// <summary>
+        /// Gastbereich vor der Theke -- exakt der Streifen, durch den die
+        /// Gaeste laufen und in dem sie anstehen (GameManager.GuestEntrance
+        /// liegt bei z=-1.2, die Warteplaetze links davon). Der Bereich war
+        /// bisher leerer Rasen und hat rund die Haelfte des Bildes gefuellt,
+        /// ohne irgendetwas zu zeigen.
+        /// </summary>
+        private static void BuildGuestArea()
+        {
+            InstantiateModel("Assets/Models/Furniture/doorwayFront.fbx", "Eingang",
+                new Vector3(RoomMinX + 0.2f, 0f, -1.2f), Quaternion.Euler(0f, 90f, 0f), FurnitureScale);
+            InstantiateModel("Assets/Models/Furniture/rugRectangle.fbx", "Eingangsteppich",
+                new Vector3(-1.6f, 0.02f, -1.2f), Quaternion.identity, FurnitureScale);
+
+            // Zwei Sitzgruppen im vorderen Streifen. Bewusst nur zwei: der
+            // Bereich muss frei genug bleiben, dass die laufenden Gaeste und
+            // die Warteschlange lesbar bleiben.
+            var tableX = new[] { 1.4f, 4.2f };
+            for (var i = 0; i < tableX.Length; i++)
+            {
+                var x = tableX[i];
+                InstantiateModel("Assets/Models/Furniture/tableCloth.fbx", $"Gasttisch_{i}",
+                    new Vector3(x, 0f, -2.3f), Quaternion.identity, FurnitureScale);
+                InstantiateModel("Assets/Models/Furniture/chair.fbx", $"Gaststuhl_{i}a",
+                    new Vector3(x - 0.55f, 0f, -2.3f), Quaternion.Euler(0f, 90f, 0f), FurnitureScale);
+                InstantiateModel("Assets/Models/Furniture/chairCushion.fbx", $"Gaststuhl_{i}b",
+                    new Vector3(x + 0.55f, 0f, -2.3f), Quaternion.Euler(0f, -90f, 0f), FurnitureScale);
+            }
+
+            InstantiateModel("Assets/Models/Furniture/pottedPlant.fbx", "Pflanze_Links",
+                new Vector3(RoomMinX + 0.35f, 0f, RoomBackZ - 0.5f), Quaternion.identity, FurnitureScale);
+            InstantiateModel("Assets/Models/Furniture/pottedPlant.fbx", "Pflanze_Rechts",
+                new Vector3(RoomMaxX - 0.5f, 0f, RoomBackZ - 0.5f), Quaternion.identity, FurnitureScale);
+            InstantiateModel("Assets/Models/Furniture/plantSmall2.fbx", "Pflanze_Theke",
+                new Vector3(-0.45f, 1.05f, 0.25f), Quaternion.identity, FurnitureScale);
+            InstantiateModel("Assets/Models/Furniture/lampSquareFloor.fbx", "Stehlampe",
+                new Vector3(RoomMaxX - 0.6f, 0f, -2.2f), Quaternion.identity, FurnitureScale);
+            InstantiateModel("Assets/Models/Furniture/trashcan.fbx", "Muelleimer",
+                new Vector3(RoomMinX + 0.5f, 0f, -2.4f), Quaternion.identity, FurnitureScale);
+        }
+
+        /// <summary>Breite eines Modells in Weltmasse bei Scale 1 -- fuer Kachelabstaende, damit keine Segmentbreite geraten werden muss.</summary>
+        private static float MeasureWidth(string assetPath)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+            if (prefab == null)
+            {
+                return 0f;
+            }
+
+            var probe = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            probe.transform.position = Vector3.zero;
+            probe.transform.localScale = Vector3.one;
+
+            var renderers = probe.GetComponentsInChildren<MeshRenderer>();
+            var width = 0f;
+            if (renderers.Length > 0)
+            {
+                var bounds = renderers[0].bounds;
+                foreach (var renderer in renderers)
+                {
+                    bounds.Encapsulate(renderer.bounds);
+                }
+
+                width = bounds.size.x;
+            }
+
+            Object.DestroyImmediate(probe);
+            return width;
         }
 
         private static void InstantiateModel(string assetPath, string instanceName, Vector3 position, Quaternion rotation,

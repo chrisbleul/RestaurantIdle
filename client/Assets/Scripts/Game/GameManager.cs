@@ -513,6 +513,20 @@ namespace RestaurantIdle.Game
         private static readonly Vector3 GuestExit = new Vector3(7f, 0.4f, -1.2f);
 
         /// <summary>
+        /// Gaeste liefen bisher exakt auf die Stationsposition -- bei
+        /// Station 0 also mitten auf die Kaffeemaschine, die auf der Theke
+        /// steht (y=1.05). Sie standen damit sichtbar in bzw. ueber dem
+        /// Moebelstueck. Der Platz VOR der Station auf Bodenhoehe ist der
+        /// einzige, an dem ein Gast plausibel wartet.
+        /// </summary>
+        private const float GuestStandZOffset = -0.85f;
+
+        private Vector3 GuestStandPosition(int stationIndex) =>
+            stationWorldPositions.TryGetValue(stationIndex, out var position)
+                ? new Vector3(position.x, GuestEntrance.y, position.z + GuestStandZOffset)
+                : GuestEntrance;
+
+        /// <summary>
         /// PLANv3.md Phase E ("echtes Raumlayout ... Warteschlange"): ein
         /// Gast, der keine freie Station fand, drehte bisher sofort am
         /// Eingang ab. Kapazitaet war damit eine harte, unsichtbare Kante --
@@ -708,7 +722,7 @@ namespace RestaurantIdle.Game
         /// </summary>
         private void AssignGuestToStation(GuestMover mover, int stationIndex, bool isVip)
         {
-            if (!stationWorldPositions.TryGetValue(stationIndex, out var targetPosition))
+            if (!stationWorldPositions.ContainsKey(stationIndex))
             {
                 return;
             }
@@ -717,7 +731,7 @@ namespace RestaurantIdle.Game
             var cycleSeconds = (float)station.CycleSeconds(StationCatalog.All[stationIndex]);
             var patience = Mathf.Max(GuestPatienceSeconds, cycleSeconds + GuestPatienceBufferSeconds);
 
-            mover.Redirect(targetPosition, waitsForService: true);
+            mover.Redirect(GuestStandPosition(stationIndex), waitsForService: true);
             guestAtStation[stationIndex] = new GuestVisit
             {
                 Mover = mover,
@@ -1081,7 +1095,11 @@ namespace RestaurantIdle.Game
             cam.orthographicSize = Mathf.Lerp(cam.orthographicSize, targetOrthoSize, t);
 
             var lookTarget = new Vector3(targetLookAtX, CameraLookAtY, 0f);
-            var screenBias = cam.transform.up * (CameraVerticalScreenBias * 2f * cam.orthographicSize);
+            // Minus, nicht plus: die Kamera muss nach UNTEN, damit der
+            // Blickpunkt im Bild nach oben in die freie Mitte rutscht. Mit
+            // dem umgekehrten Vorzeichen sass die Theke im ersten
+            // Portrait-Screenshot halb hinter der Kopfleiste.
+            var screenBias = -cam.transform.up * (CameraVerticalScreenBias * 2f * cam.orthographicSize);
             var desiredPosition = lookTarget + cam.transform.rotation * CameraBackOffset + screenBias;
             cam.transform.position = Vector3.Lerp(cam.transform.position, desiredPosition, t);
         }
@@ -1305,18 +1323,34 @@ namespace RestaurantIdle.Game
         {
             var theme = LocationTheme.For(state.CurrentLocation);
 
-            var ground = GameObject.Find("Ground");
-            if (ground != null && ground.TryGetComponent<MeshRenderer>(out var groundRenderer))
+            var floor = GameObject.Find("InteriorFloor");
+            if (floor != null && floor.TryGetComponent<MeshRenderer>(out var floorRenderer))
             {
-                groundRenderer.sharedMaterial.SetColor(BaseColorId, theme.Ground);
+                floorRenderer.sharedMaterial.SetColor(BaseColorId, theme.Ground);
             }
 
-            for (var i = 0; i < 4; i++)
+            // sharedMaterial waere hier falsch: die Wandsegmente kommen aus
+            // dem Kenney Furniture Kit und teilen sich EIN Material mit
+            // saemtlichen anderen Moebeln der Szene -- eine Renovierung
+            // haette Theke, Geraete und Stuehle gleich mit umgefaerbt.
+            // .material erzeugt pro Renderer eine Instanz; zur Laufzeit
+            // (nur dort laeuft diese Methode) ist das der richtige Weg.
+            //
+            // Segmentanzahl haengt an der gemessenen Wandbreite (siehe
+            // CIBuild.BuildBackWall) und ist deshalb nicht mehr fix 4 --
+            // grosszuegig hochzaehlen und fehlende Namen ueberspringen ist
+            // billiger als die Zahl an zwei Stellen zu pflegen.
+            for (var i = 0; i < 24; i++)
             {
                 var wall = GameObject.Find($"Wall_{i}");
-                if (wall != null && wall.TryGetComponent<MeshRenderer>(out var wallRenderer))
+                if (wall == null)
                 {
-                    wallRenderer.sharedMaterial.SetColor(BaseColorId, theme.Wall);
+                    continue;
+                }
+
+                foreach (var wallRenderer in wall.GetComponentsInChildren<MeshRenderer>())
+                {
+                    wallRenderer.material.SetColor(BaseColorId, theme.Wall);
                 }
             }
         }
