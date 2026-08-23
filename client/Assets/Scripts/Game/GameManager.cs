@@ -1063,6 +1063,9 @@ namespace RestaurantIdle.Game
             // waechst.
             var right = cam.transform.right;
             var up = cam.transform.up;
+            var forward = cam.transform.forward;
+            var forwardSum = 0f;
+            var pointCount = 0;
             var minRight = float.MaxValue;
             var maxRight = float.MinValue;
             var minUp = float.MaxValue;
@@ -1077,6 +1080,16 @@ namespace RestaurantIdle.Game
                 maxRight = Mathf.Max(maxRight, r);
                 minUp = Mathf.Min(minUp, u);
                 maxUp = Mathf.Max(maxUp, u);
+
+                // Die Tiefe entlang der Blickrichtung beeinflusst bei einer
+                // orthografischen Kamera zwar nicht, WAS seitlich im Bild
+                // liegt, sehr wohl aber die Near/Far-Ebene: ohne diesen
+                // Anteil landete der rekonstruierte Zielpunkt auf der
+                // Kamera-Ebene durch den Weltursprung, die Kamera damit
+                // mitten in der Szene -- im Testlauf ein Nahaufnahme-
+                // Ausschnitt von Teppich und Wand.
+                forwardSum += Vector3.Dot(worldPoint, forward);
+                pointCount++;
                 any = true;
             }
 
@@ -1110,7 +1123,9 @@ namespace RestaurantIdle.Game
             // Zielpunkt zurueck in Weltkoordinaten. Die Komponente entlang
             // der Blickrichtung ist bei einer orthografischen Kamera
             // bedeutungslos -- ein beliebiger Punkt der Mittelachse reicht.
-            targetLookAt = right * ((minRight + maxRight) / 2f) + up * ((minUp + maxUp) / 2f);
+            targetLookAt = right * ((minRight + maxRight) / 2f)
+                + up * ((minUp + maxUp) / 2f)
+                + forward * (forwardSum / pointCount);
         }
 
         /// <summary>Weiche Kamerafahrt Richtung targetOrthoSize/targetLookAt, jeden Frame aus Update() aufgerufen -- siehe RecomputeCameraTarget fuer die Zielwerte.</summary>
