@@ -288,7 +288,16 @@ namespace RestaurantIdle.Game
         /// (Produktionskapazitaet vs. Gaestestrom) die ehrliche Naeherung.
         /// </summary>
         private double OfflineCapacityFactor() =>
-            GuestFlow.CapacityFactor(SumManagedYieldPerSecond(), GuestFlow.GuestFlowAt(state.MarketingLevel));
+            GuestFlow.CapacityFactor(
+                SumManagedYieldPerSecond(),
+                // Mit Ruf-Faktor, wie im Live-Betrieb (EffectiveGuestFlow) --
+                // ohne ihn haette der Ruf zwar den laufenden Gaestestrom
+                // gedrosselt, den Offline-Ertrag aber unveraendert gelassen.
+                // Ausgerechnet die Zeit ohne Aufsicht waere damit die
+                // einzige gewesen, in der schlechter Service folgenlos
+                // bleibt. Die Rush Hour geht bewusst NICHT ein: sie ist ein
+                // Ereignis der aktiven Spielzeit.
+                GuestFlow.GuestFlowAt(state.MarketingLevel) * Reputation.FlowMultiplier(state.Reputation));
 
         /// <summary>
         /// PLANv3.md K3-Fix: globaler Ertragsmultiplikator aus den
