@@ -509,22 +509,25 @@ namespace RestaurantIdle.Game
         // 0.55 ergibt eine Sprite-Hoehe von ~0.7, aehnlich der vorherigen
         // Kapsel (0.25/0.4/0.25 -> Hoehe 0.8).
         private const float GuestSpriteScale = 0.55f;
-        private static readonly Vector3 GuestEntrance = new Vector3(-1.5f, 0.4f, -1.2f);
-        private static readonly Vector3 GuestExit = new Vector3(7f, 0.4f, -1.2f);
 
         /// <summary>
-        /// Gaeste liefen bisher exakt auf die Stationsposition -- bei
-        /// Station 0 also mitten auf die Kaffeemaschine, die auf der Theke
-        /// steht (y=1.05). Sie standen damit sichtbar in bzw. ueber dem
-        /// Moebelstueck. Der Platz VOR der Station auf Bodenhoehe ist der
+        /// Eingang, Ausgang, Warteplaetze und Wartepositionen stehen in
+        /// RestaurantLayout -- derselben Quelle, aus der CIBuild die Szene
+        /// baut. Vorher waren es hier eigene Konstanten, die bei jeder
+        /// Grundriss-Aenderung von Hand nachgezogen werden mussten.
+        ///
+        /// Gaeste liefen ausserdem exakt auf die Stationsposition -- bei
+        /// Station 0 also mitten in die Kaffeemaschine, die auf der Theke
+        /// steht (y=1.05). Der Platz VOR der Station auf Bodenhoehe ist der
         /// einzige, an dem ein Gast plausibel wartet.
         /// </summary>
-        private const float GuestStandZOffset = -0.85f;
+        private static Vector3 GuestEntrance => RestaurantLayout.Entrance;
+        private static Vector3 GuestExit => RestaurantLayout.Exit;
 
         private Vector3 GuestStandPosition(int stationIndex) =>
             stationWorldPositions.TryGetValue(stationIndex, out var position)
-                ? new Vector3(position.x, GuestEntrance.y, position.z + GuestStandZOffset)
-                : GuestEntrance;
+                ? RestaurantLayout.GuestStandPosition(position)
+                : RestaurantLayout.Entrance;
 
         /// <summary>
         /// PLANv3.md Phase E ("echtes Raumlayout ... Warteschlange"): ein
@@ -536,12 +539,10 @@ namespace RestaurantIdle.Game
         /// es eng wird, und kann durch Antippen oder eine neue Station noch
         /// eingreifen, bevor jemand wirklich verloren geht.
         /// </summary>
-        private const int QueueCapacity = 4;
+        private const int QueueCapacity = RestaurantLayout.QueueCapacity;
 
         /// <summary>Geduld in der Schlange -- laenger als an der Station: Anstehen ist erwartbar, Warten am bedienten Platz nicht.</summary>
         private const float QueuePatienceSeconds = 25f;
-        private static readonly Vector3 QueueFirstSlot = new Vector3(-0.9f, 0.4f, -1.2f);
-        private static readonly Vector3 QueueSlotStep = new Vector3(-0.42f, 0f, 0f);
 
         /// <summary>
         /// Rush Hour: alle RushIntervalSeconds fuer RushDurationSeconds
@@ -598,8 +599,8 @@ namespace RestaurantIdle.Game
         // der zuvor mehrfach nachjustiert wurde.
         private const float MinOrthographicSize = 2f;
         private const float CameraFramingMarginX = 1.4f;
+        private const float CameraFramingMarginY = 1.6f;
         private const float CameraFramingLerpSpeed = 1.2f;
-        private const float CameraLookAtY = 0.4f;
 
         /// <summary>
         /// Die Szene ist nicht mehr ueber den ganzen Bildschirm sichtbar:
@@ -612,7 +613,7 @@ namespace RestaurantIdle.Game
         private const float CameraVerticalScreenBias = 0.055f;
         private static readonly Vector3 CameraBackOffset = new Vector3(0f, 0f, -15f);
         private float targetOrthoSize = MinOrthographicSize;
-        private float targetLookAtX = 2.8f;
+        private Vector3 targetLookAt = Vector3.zero;
 
         /// <summary>Gaestestrom inkl. Ruf-Faktor und laufender Rush Hour -- eine Quelle fuer Simulation und Anzeige.</summary>
         private BigDouble EffectiveGuestFlow() =>
@@ -712,7 +713,7 @@ namespace RestaurantIdle.Game
             RegisterLostGuest("Die Schlange war zu lang -- ein Gast ist gegangen", fromQueue: true);
         }
 
-        private static Vector3 QueueSlotPosition(int slot) => QueueFirstSlot + QueueSlotStep * slot;
+        private static Vector3 QueueSlotPosition(int slot) => RestaurantLayout.QueueSlot(slot);
 
         /// <summary>
         /// Setzt einen Gast (frisch gespawnt oder aus der Schlange
@@ -1047,42 +1048,72 @@ namespace RestaurantIdle.Game
         /// </summary>
         private void RecomputeCameraTarget()
         {
-            var minX = float.MaxValue;
-            var maxX = float.MinValue;
-
-            for (var i = 0; i < state.Stations.Count; i++)
-            {
-                var revealed = i == 0 || state.Stations[i - 1].IsUnlocked;
-                if (!revealed || !stationWorldPositions.TryGetValue(i, out var position))
-                {
-                    continue;
-                }
-
-                minX = Mathf.Min(minX, position.x);
-                maxX = Mathf.Max(maxX, position.x);
-            }
-
-            if (minX > maxX)
+            var cam = Camera.main;
+            if (cam == null)
             {
                 return;
             }
 
-            // Eingang und Warteschlange muessen mit ins Bild: Gaeste
-            // betreten die Szene bei GuestEntrance.x und stellen sich nach
-            // links davor an. Ohne diese Zeile bleibt genau der Teil der
-            // Simulation unsichtbar, den die Schlange erst sichtbar machen
-            // soll -- im Fruehspiel (nur Station 0 freigeschaltet) lag der
-            // Eingang komplett ausserhalb des Bildes.
-            minX = Mathf.Min(minX, QueueSlotPosition(QueueCapacity - 1).x);
-            maxX = Mathf.Max(maxX, GuestEntrance.x);
+            // Rahmung in der EBENE DER KAMERA statt entlang der Welt-X-Achse:
+            // die Kamera steht isometrisch, eine Welt-X-Spanne sagt ueber die
+            // benoetigte Bildbreite wenig und ueber die Bildhoehe gar nichts.
+            // Mit dem diagonalen Grundriss (RestaurantLayout) lief die alte
+            // X-Rechnung voellig ins Leere: sie haette zum Zoom auf die
+            // Bildbreite optimiert, waehrend die Theke in die Bildhoehe
+            // waechst.
+            var right = cam.transform.right;
+            var up = cam.transform.up;
+            var minRight = float.MaxValue;
+            var maxRight = float.MinValue;
+            var minUp = float.MaxValue;
+            var maxUp = float.MinValue;
+            var any = false;
 
-            var aspect = Camera.main != null ? Camera.main.aspect : 0.57f;
-            var span = maxX - minX + CameraFramingMarginX;
-            targetOrthoSize = Mathf.Max(MinOrthographicSize, span / (2f * aspect));
-            targetLookAtX = (minX + maxX) / 2f;
+            void Include(Vector3 worldPoint)
+            {
+                var r = Vector3.Dot(worldPoint, right);
+                var u = Vector3.Dot(worldPoint, up);
+                minRight = Mathf.Min(minRight, r);
+                maxRight = Mathf.Max(maxRight, r);
+                minUp = Mathf.Min(minUp, u);
+                maxUp = Mathf.Max(maxUp, u);
+                any = true;
+            }
+
+            for (var i = 0; i < state.Stations.Count; i++)
+            {
+                // Sichtbare, nicht nur freigeschaltete Stationen: der
+                // Spieler soll die naechste, noch gesperrte Station im
+                // Blick haben.
+                var revealed = i == 0 || state.Stations[i - 1].IsUnlocked;
+                if (revealed && stationWorldPositions.TryGetValue(i, out var position))
+                {
+                    Include(position);
+                }
+            }
+
+            if (!any)
+            {
+                return;
+            }
+
+            // Eingang und der letzte Warteplatz muessen mit ins Bild --
+            // sonst bleibt ausgerechnet die Warteschlange unsichtbar, die
+            // die Kapazitaetsgrenze sichtbar machen soll.
+            Include(RestaurantLayout.Entrance);
+            Include(RestaurantLayout.QueueSlot(QueueCapacity - 1));
+
+            var width = maxRight - minRight + CameraFramingMarginX;
+            var height = maxUp - minUp + CameraFramingMarginY;
+            targetOrthoSize = Mathf.Max(MinOrthographicSize, Mathf.Max(width / (2f * cam.aspect), height / 2f));
+
+            // Zielpunkt zurueck in Weltkoordinaten. Die Komponente entlang
+            // der Blickrichtung ist bei einer orthografischen Kamera
+            // bedeutungslos -- ein beliebiger Punkt der Mittelachse reicht.
+            targetLookAt = right * ((minRight + maxRight) / 2f) + up * ((minUp + maxUp) / 2f);
         }
 
-        /// <summary>Weiche Kamerafahrt Richtung targetOrthoSize/targetLookAtX, jeden Frame aus Update() aufgerufen -- siehe RecomputeCameraTarget fuer die Zielwerte.</summary>
+        /// <summary>Weiche Kamerafahrt Richtung targetOrthoSize/targetLookAt, jeden Frame aus Update() aufgerufen -- siehe RecomputeCameraTarget fuer die Zielwerte.</summary>
         private void ApplyCameraFraming()
         {
             if (Camera.main == null)
@@ -1094,7 +1125,7 @@ namespace RestaurantIdle.Game
             var t = Time.deltaTime * CameraFramingLerpSpeed;
             cam.orthographicSize = Mathf.Lerp(cam.orthographicSize, targetOrthoSize, t);
 
-            var lookTarget = new Vector3(targetLookAtX, CameraLookAtY, 0f);
+            var lookTarget = targetLookAt;
             // Minus, nicht plus: die Kamera muss nach UNTEN, damit der
             // Blickpunkt im Bild nach oben in die freie Mitte rutscht. Mit
             // dem umgekehrten Vorzeichen sass die Theke im ersten
