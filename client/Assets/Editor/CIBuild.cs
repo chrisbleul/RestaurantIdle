@@ -95,20 +95,45 @@ namespace RestaurantIdle.Editor
             var lookTarget = RestaurantLayout.StationPosition(1) + new Vector3(0f, 0.4f, 0f);
             cameraObject.transform.position = lookTarget + cameraObject.transform.rotation * new Vector3(0, 0, -15f);
 
+            // Nutzer-Feedback ("die Schatten sind zu extrem"): drei
+            // Ursachen zusammen.
+            //
+            // 1. shadowStrength wurde nie gesetzt und stand damit auf 1.0 --
+            //    jeder Schatten war voll deckend, also praktisch schwarz.
+            // 2. Bei 50 Grad Neigung wirft ein 1 Einheit hohes Moebelstueck
+            //    einen fast ebenso langen Schlagschatten quer ueber den
+            //    Boden; im Portrait-Ausschnitt waren das dunkle Baender
+            //    ueber die halbe Bildflaeche. Steiler = kuerzer.
+            // 3. LightShadows.Soft blieb wirkungslos, solange die Pipeline
+            //    weiche Schatten gar nicht unterstuetzte (siehe UrpSetup).
             var lightObject = new GameObject("Directional Light", typeof(Light));
             var light = lightObject.GetComponent<Light>();
             light.type = LightType.Directional;
-            light.intensity = 1.2f;
+            light.intensity = 0.95f;
+            // Leicht warm statt reinweiss -- reines Weiss auf den ohnehin
+            // hellen Kenney-Materialien liess Theke und Waende ausbrennen.
+            light.color = new Color(1f, 0.96f, 0.9f);
             light.shadows = LightShadows.Soft;
-            lightObject.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
+            light.shadowStrength = 0.45f;
+            light.shadowNormalBias = 0.4f;
+            lightObject.transform.rotation = Quaternion.Euler(62f, -35f, 0f);
 
             // War vorher 0.75/0.75/0.8 -- zusammen mit dem Directional Light
             // hat das jede Materialfarbe stark Richtung Weiss verwaschen
             // (sichtbar beim Location-Farbwechsel: sattes Grau kam als
             // blasses Lavendel an). Deutlich gedaempft, damit Basisfarben
             // erkennbar bleiben.
-            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-            RenderSettings.ambientLight = new Color(0.52f, 0.52f, 0.56f);
+            // Gradient statt Flat: ein einziger Umgebungston beleuchtet
+            // jede Flaeche gleich stark, wodurch die Facetten der Low-Poly-
+            // Modelle nur ueber das harte Sonnenlicht auseinandergehalten
+            // werden -- das laesst alles kantig wirken. Mit Himmel-, Horizont-
+            // und Bodenton bekommen nach oben, zur Seite und nach unten
+            // gerichtete Flaechen unterschiedliche Grundhelligkeit, und die
+            // Kanten trennen sich auch dort, wo kein direktes Licht hinfaellt.
+            RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.62f, 0.68f, 0.76f);
+            RenderSettings.ambientEquatorColor = new Color(0.56f, 0.55f, 0.53f);
+            RenderSettings.ambientGroundColor = new Color(0.4f, 0.36f, 0.33f);
 
             BuildLocation1Placeholder();
 
