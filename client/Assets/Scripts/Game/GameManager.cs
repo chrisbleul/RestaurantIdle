@@ -113,6 +113,9 @@ namespace RestaurantIdle.Game
             /// <summary>Seltener Gast mit vielfachem Ertrag, siehe VipPayoutMultiplier.</summary>
             public bool IsVip;
 
+            /// <summary>Einmal gemerkt statt pro Frame per GetComponent gesucht -- siehe GuestSpriteAnimator.Impatience.</summary>
+            public GuestSpriteAnimator SpriteAnimator;
+
             /// <summary>PLANv3.md Abschnitt 4: Dauer-Dampfeffekt als Bedient-Signal, siehe SteamEffect. Null bis der Gast ankommt, danach bis Visit-Ende aktiv.</summary>
             public GameObject SteamEffect;
         }
@@ -609,6 +612,7 @@ namespace RestaurantIdle.Game
             public GuestMover Mover;
             public float PatienceRemaining;
             public bool IsVip;
+            public GuestSpriteAnimator SpriteAnimator;
         }
 
         /// <summary>
@@ -736,6 +740,7 @@ namespace RestaurantIdle.Game
                     Mover = mover,
                     PatienceRemaining = QueuePatienceSeconds,
                     IsVip = isVip,
+                    SpriteAnimator = mover.GetComponent<GuestSpriteAnimator>(),
                 });
 
                 mover.Redirect(QueueSlotPosition(guestQueue.Count - 1), waitsForService: true);
@@ -776,6 +781,7 @@ namespace RestaurantIdle.Game
                 PatienceRemaining = patience,
                 TotalPatience = patience,
                 IsVip = isVip,
+                SpriteAnimator = mover.GetComponent<GuestSpriteAnimator>(),
             };
         }
 
@@ -798,6 +804,11 @@ namespace RestaurantIdle.Game
                 }
 
                 queued.PatienceRemaining -= Time.deltaTime;
+                if (queued.SpriteAnimator != null)
+                {
+                    queued.SpriteAnimator.Impatience = 1f - Mathf.Clamp01(queued.PatienceRemaining / QueuePatienceSeconds);
+                }
+
                 if (queued.PatienceRemaining <= 0f)
                 {
                     queued.Mover.Leave();
@@ -904,6 +915,11 @@ namespace RestaurantIdle.Game
                 if (guestAtStation.TryGetValue(index, out var visit) && visit.Mover != null && visit.Mover.HasArrivedAtStation)
                 {
                     var fraction = visit.TotalPatience > 0f ? visit.PatienceRemaining / visit.TotalPatience : 0f;
+                    if (visit.SpriteAnimator != null)
+                    {
+                        visit.SpriteAnimator.Impatience = 1f - Mathf.Clamp01(fraction);
+                    }
+
                     var payout = station.YieldPerSale(def) * PrestigeMultiplier() * (visit.IsVip ? VipPayoutMultiplier : 1.0);
                     badge.ShowWaitingGuest(
                         (visit.IsVip ? "VIP  " : string.Empty) + NumberFormat.Format(payout),
@@ -945,6 +961,11 @@ namespace RestaurantIdle.Game
             lifetimeRevenue += effective;
             state.Reputation = Reputation.AfterServed(state.Reputation, tipMultiplier);
             state.GuestsServed++;
+
+            if (visit.SpriteAnimator != null)
+            {
+                visit.SpriteAnimator.Impatience = 0f;
+            }
 
             visit.Mover.Leave();
 

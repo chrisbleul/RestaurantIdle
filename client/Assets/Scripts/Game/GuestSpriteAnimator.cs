@@ -17,6 +17,27 @@ namespace RestaurantIdle.Game
     {
         private const float FrameSeconds = 0.15f;
 
+        /// <summary>
+        /// Ab welchem Anteil verbrauchter Geduld der wartende Gast anfaengt,
+        /// unruhig zu werden -- darunter steht er ruhig.
+        /// </summary>
+        private const float FidgetThreshold = 0.45f;
+        private const float FidgetSlowSeconds = 0.5f;
+        private const float FidgetFastSeconds = 0.14f;
+
+        /// <summary>
+        /// 0 = gerade angekommen, 1 = geht gleich unbedient. Wird vom
+        /// GameManager aus derselben Geduld gespeist, die auch der
+        /// Geduldsbalken ueber der Station anzeigt (StationBadge).
+        ///
+        /// Bisher sah ein Gast, dessen Geduld fast aufgebraucht war, exakt
+        /// aus wie einer, der gerade erst angekommen ist -- die Information
+        /// stand ausschliesslich im UI-Schild. In einem Spiel, dessen
+        /// aktive Entscheidung "wo tippe ich als naechstes hin?" lautet,
+        /// gehoert sie an die Figur selbst.
+        /// </summary>
+        public float Impatience { get; set; }
+
         private SpriteRenderer spriteRenderer;
         private GuestMover mover;
         private Sprite idleSprite;
@@ -39,18 +60,31 @@ namespace RestaurantIdle.Game
 
         private void Update()
         {
+            var interval = FrameSeconds;
+
             if (mover.CurrentPhase == GuestMover.Phase.Waiting)
             {
-                if (idleSprite != null)
+                if (Impatience < FidgetThreshold)
                 {
-                    spriteRenderer.sprite = idleSprite;
+                    if (idleSprite != null)
+                    {
+                        spriteRenderer.sprite = idleSprite;
+                    }
+
+                    frameTimer = 0f;
+                    return;
                 }
 
-                return;
+                // Je knapper die Geduld, desto schneller das Zappeln -- ein
+                // stetiger Uebergang statt eines harten Zustandswechsels,
+                // damit die Dringlichkeit ablesbar ist und nicht nur ihr
+                // Vorhandensein.
+                var urgency = Mathf.InverseLerp(FidgetThreshold, 1f, Impatience);
+                interval = Mathf.Lerp(FidgetSlowSeconds, FidgetFastSeconds, urgency);
             }
 
             frameTimer += Time.deltaTime;
-            if (frameTimer < FrameSeconds)
+            if (frameTimer < interval)
             {
                 return;
             }
