@@ -22,8 +22,9 @@ namespace RestaurantIdle.Game
         /// stammt von vor der Einfuehrung von SchemaVersion. 1 = Phase A
         /// (SchemaVersion eingefuehrt, Struktur sonst unveraendert). 2 =
         /// Phase B, K1-Umbau: Station.OwnedCount -> PriceLevel/EquipmentLevel.
+        /// 3 = Ruf-System (GameState.Reputation/GuestsServed/GuestsLost).
         /// </summary>
-        public const int CurrentSchemaVersion = 2;
+        public const int CurrentSchemaVersion = 3;
 
         private static string SavePath => Path.Combine(Application.persistentDataPath, "save.json");
 
@@ -126,6 +127,17 @@ namespace RestaurantIdle.Game
 #pragma warning restore CS0618
 
                 state.SchemaVersion = 2;
+            }
+
+            if (state.SchemaVersion < 3)
+            {
+                // Ruf-System eingefuehrt. JsonUtility hat das neue Feld beim
+                // Laden auf 0 gesetzt -- das ist der schlechtestmoegliche Ruf
+                // und wuerde einen bestehenden Spielstand ohne Zutun des
+                // Spielers auf den halben Gaestestrom druecken. Alle
+                // Alt-Spielstaende starten deshalb neutral.
+                state.Reputation = BalancingCore.Reputation.Start;
+                state.SchemaVersion = 3;
             }
         }
 

@@ -36,5 +36,19 @@ namespace RestaurantIdle.Game
         /// weiter, aber es gibt keinen sichtbaren Ortswechsel mehr.
         /// </summary>
         public int CurrentLocation;
+
+        /// <summary>
+        /// Ruf des Restaurants (0..100, siehe BalancingCore.Reputation).
+        /// Skaliert den Gaestestrom und macht damit unbedient abgewanderte
+        /// Gaeste erstmals spuerbar. JsonUtility setzt das Feld in alten
+        /// Spielstaenden auf 0 -- das waere der schlechtestmoegliche Ruf,
+        /// deshalb hebt SaveSystem.Migrate (Version 2 -> 3) es explizit auf
+        /// den Startwert an, statt sich auf den C#-Default zu verlassen.
+        /// </summary>
+        public double Reputation = BalancingCore.Reputation.Start;
+
+        /// <summary>Reine Statistik fuer die Einstellungen-Ansicht -- kein Gameplay haengt daran.</summary>
+        public int GuestsServed;
+        public int GuestsLost;
     }
 }

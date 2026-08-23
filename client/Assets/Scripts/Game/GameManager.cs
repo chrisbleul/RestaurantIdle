@@ -92,6 +92,12 @@ namespace RestaurantIdle.Game
             public GuestMover Mover;
             public float PatienceRemaining;
 
+            /// <summary>Ausgangsgeduld dieses Besuchs -- Bezugsgroesse fuer Geduldsbalken (StationBadge) und Trinkgeld (BalancingCore.Service).</summary>
+            public float TotalPatience;
+
+            /// <summary>Seltener Gast mit vielfachem Ertrag, siehe VipPayoutMultiplier.</summary>
+            public bool IsVip;
+
             /// <summary>PLANv3.md Abschnitt 4: Dauer-Dampfeffekt als Bedient-Signal, siehe SteamEffect. Null bis der Gast ankommt, danach bis Visit-Ende aktiv.</summary>
             public GameObject SteamEffect;
         }
@@ -117,12 +123,25 @@ namespace RestaurantIdle.Game
         private BigDouble pendingOfflineEarnings = BigDouble.Zero;
         private double pendingOfflineMinutes;
 
+        // -- HUD (siehe BuildUi) --
+        private Transform canvasTransform;
+        private RectTransform canvasRect;
+
+        /// <summary>Grosse Umsatzzahl in der Kopfleiste -- gleichzeitig das Ziel von FlashHeader.</summary>
         private Text headerLabel;
+        private Text statsLabel;
+        private Text goalLabel;
+        private Image goalFill;
         private Button marketingButtonRef;
+        private Text marketingButtonLabel;
         private Image marketingButtonImage;
-        private Text prestigeLabel;
         private Button prestigeButtonRef;
+        private Text prestigeButtonLabel;
         private Image prestigeButtonImage;
+        private GameObject rushBanner;
+
+        /// <summary>Schwebendes Schild pro Station (Geduld/Kaufhinweis), siehe StationBadge.</summary>
+        private readonly Dictionary<int, StationBadge> stationBadges = new();
 
         // PLANv3.md Phase D ("Kein Tutorial, kein geführter erster Kauf"):
         // der allererste Kauf im Spiel bekommt eine auffaellige Farbe statt
@@ -191,6 +210,12 @@ namespace RestaurantIdle.Game
                 stationWorldPositions[hotspot.StationIndex] = hotspot.transform.position;
                 stationGameObjects[hotspot.StationIndex] = hotspot.gameObject;
                 stationOriginalScale[hotspot.StationIndex] = hotspot.transform.localScale;
+
+                // Schild leicht ueber der Station -- direkt auf der
+                // Stationsposition wuerde es das Moebelstueck selbst
+                // verdecken, das es erklaeren soll.
+                stationBadges[hotspot.StationIndex] =
+                    StationBadge.Create(canvasRect, hotspot.transform.position + new Vector3(0f, 0.85f, 0f));
             }
 
             RevealStationsAsNeeded(animate: false);
@@ -310,9 +335,12 @@ namespace RestaurantIdle.Game
             }
 
             HandleStationTap();
+            UpdateRushHour();
             UpdateGuestSpawner();
             UpdateGuestVisits();
+            UpdateGuestQueue();
             ApplyCameraFraming();
+            UpdateStationBadges();
 
             uiRefreshTimer += Time.deltaTime;
             if (uiRefreshTimer >= UiRefreshIntervalSeconds)
@@ -370,18 +398,8 @@ namespace RestaurantIdle.Game
                     var earned = station.Tick(def, Time.deltaTime);
                     if (earned > BigDouble.Zero)
                     {
-                        var effective = earned * PrestigeMultiplier();
-                        revenue += effective;
-                        lifetimeRevenue += effective;
-
-                        visit.Mover.Leave();
+                        ServeGuest(stationIndex, visit, earned);
                         (finished ??= new List<int>()).Add(stationIndex);
-
-                        if (stationWorldPositions.TryGetValue(stationIndex, out var burstPos))
-                        {
-                            CoinBurst.SpawnAt(burstPos);
-                        }
-
                         continue;
                     }
                 }
@@ -390,6 +408,7 @@ namespace RestaurantIdle.Game
                 if (visit.PatienceRemaining <= 0f)
                 {
                     visit.Mover.Leave();
+                    RegisterLostGuest();
                     (finished ??= new List<int>()).Add(stationIndex);
                 }
             }
@@ -494,6 +513,57 @@ namespace RestaurantIdle.Game
         private static readonly Vector3 GuestExit = new Vector3(7f, 0.4f, -1.2f);
 
         /// <summary>
+        /// PLANv3.md Phase E ("echtes Raumlayout ... Warteschlange"): ein
+        /// Gast, der keine freie Station fand, drehte bisher sofort am
+        /// Eingang ab. Kapazitaet war damit eine harte, unsichtbare Kante --
+        /// und der Ruf-Verlust (BalancingCore.Reputation) traf sofort, ohne
+        /// dass der Spieler eine Chance zum Reagieren hatte. Mit einer
+        /// echten Schlange entsteht stattdessen ein Puffer: man SIEHT, dass
+        /// es eng wird, und kann durch Antippen oder eine neue Station noch
+        /// eingreifen, bevor jemand wirklich verloren geht.
+        /// </summary>
+        private const int QueueCapacity = 4;
+
+        /// <summary>Geduld in der Schlange -- laenger als an der Station: Anstehen ist erwartbar, Warten am bedienten Platz nicht.</summary>
+        private const float QueuePatienceSeconds = 25f;
+        private static readonly Vector3 QueueFirstSlot = new Vector3(-0.9f, 0.4f, -1.2f);
+        private static readonly Vector3 QueueSlotStep = new Vector3(-0.42f, 0f, 0f);
+
+        /// <summary>
+        /// Rush Hour: alle RushIntervalSeconds fuer RushDurationSeconds
+        /// vielfacher Gaestestrom. Ein Idle-Spiel, dessen Gaeste in ewig
+        /// gleichem Takt hereinkommen, hat keinen Grund, jemals aktiv
+        /// hinzuschauen -- der Stossbetrieb erzeugt genau die Momente, in
+        /// denen manuelles Antippen, Schlangenlaenge und Ruf ploetzlich
+        /// zusammenspielen.
+        /// </summary>
+        private const float RushIntervalSeconds = 150f;
+        private const float RushDurationSeconds = 25f;
+        private const float RushSpawnMultiplier = 3f;
+        private const float FirstRushAfterSeconds = 60f;
+        private float rushCooldown = FirstRushAfterSeconds;
+        private float rushRemaining;
+
+        /// <summary>
+        /// Seltener Gast mit vielfachem Ertrag -- der einzige Grund, eine
+        /// bereits laufende, gemanagte Station trotzdem noch von Hand
+        /// anzutippen. Ohne so ein Ereignis endet aktives Spielen exakt in
+        /// dem Moment, in dem der letzte Manager gekauft ist.
+        /// </summary>
+        private const double VipPayoutMultiplier = 6.0;
+        private const float VipChance = 0.08f;
+        private static readonly Color VipTint = new Color(1f, 0.85f, 0.35f);
+
+        private readonly List<QueuedGuest> guestQueue = new();
+
+        private class QueuedGuest
+        {
+            public GuestMover Mover;
+            public float PatienceRemaining;
+            public bool IsVip;
+        }
+
+        /// <summary>
         /// Nutzer-Feedback ("macht das Spiel gerade Spass?"): die feste
         /// Kamera aus CIBuild.cs (orthographicSize 4, lookTarget x=2.8)
         /// zeigt bei sieben Stationen in einer Reihe (Spannweite ~6 Einheiten)
@@ -520,9 +590,19 @@ namespace RestaurantIdle.Game
         private float targetOrthoSize = MinOrthographicSize;
         private float targetLookAtX = 2.8f;
 
+        /// <summary>Gaestestrom inkl. Ruf-Faktor und laufender Rush Hour -- eine Quelle fuer Simulation und Anzeige.</summary>
+        private BigDouble EffectiveGuestFlow() =>
+            GuestFlow.GuestFlowAt(state.MarketingLevel)
+            * Reputation.FlowMultiplier(state.Reputation)
+            * (rushRemaining > 0f ? (double)RushSpawnMultiplier : 1.0);
+
         private void UpdateGuestSpawner()
         {
-            var guestFlow = GuestFlow.GuestFlowAt(state.MarketingLevel).ToDouble();
+            // Ruf und Rush Hour wirken multiplikativ auf denselben
+            // Gaestestrom, den auch die Kopfzeile anzeigt (RefreshUi) --
+            // damit ist die angezeigte Zahl nicht Deko, sondern exakt die
+            // Groesse, die den Takt bestimmt.
+            var guestFlow = EffectiveGuestFlow().ToDouble();
             var interval = guestFlow > 0
                 ? Mathf.Clamp((float)(GuestSpawnRateNumerator / guestFlow), GuestSpawnMinInterval, GuestSpawnMaxInterval)
                 : GuestSpawnMaxInterval;
@@ -551,16 +631,17 @@ namespace RestaurantIdle.Game
         /// </summary>
         private void SpawnGuest()
         {
-            var stationIndex = PickAvailableStationIndex();
+            var isVip = UnityEngine.Random.value < VipChance;
 
             // PLANv3.md Abschnitt 5: Kenney-Toon-Character-Sprite statt
             // eingefaerbter Kapsel. Kein Collider noetig -- anders als die
             // Kapsel vorher blockiert ein SpriteRenderer ohne Collider von
             // Natur aus keinen Raycast.
-            var guest = new GameObject("Guest", typeof(SpriteRenderer));
+            var guest = new GameObject(isVip ? "Guest_VIP" : "Guest", typeof(SpriteRenderer));
             var spriteRenderer = guest.GetComponent<SpriteRenderer>();
             spriteRenderer.sprite = Resources.Load<Sprite>("Characters/guest-idle");
-            guest.transform.localScale = Vector3.one * GuestSpriteScale;
+            spriteRenderer.color = isVip ? VipTint : Color.white;
+            guest.transform.localScale = Vector3.one * (isVip ? GuestSpriteScale * 1.15f : GuestSpriteScale);
             if (Camera.main != null)
             {
                 // Billboard: Sprite-Ebene richtet sich einmalig nach der
@@ -570,21 +651,275 @@ namespace RestaurantIdle.Game
             }
 
             var mover = guest.AddComponent<GuestMover>();
+            mover.SpeedMultiplier = UnityEngine.Random.Range(0.85f, 1.2f);
             guest.AddComponent<GuestSpriteAnimator>();
+            mover.Init(GuestEntrance, GuestEntrance, GuestExit, waitsForService: false);
 
-            if (stationIndex.HasValue && stationWorldPositions.TryGetValue(stationIndex.Value, out var targetPosition))
+            var stationIndex = PickAvailableStationIndex();
+            if (stationIndex.HasValue)
             {
-                mover.Init(GuestEntrance, targetPosition, GuestExit, waitsForService: true);
-                var station = state.Stations[stationIndex.Value];
-                var cycleSeconds = (float)station.CycleSeconds(StationCatalog.All[stationIndex.Value]);
-                var patience = Mathf.Max(GuestPatienceSeconds, cycleSeconds + GuestPatienceBufferSeconds);
-                guestAtStation[stationIndex.Value] = new GuestVisit { Mover = mover, PatienceRemaining = patience };
+                AssignGuestToStation(mover, stationIndex.Value, isVip);
+                if (isVip)
+                {
+                    Toast.Show(canvasTransform, "VIP-Gast im Haus -- sofort bedienen lohnt sich!", new Color(1f, 0.93f, 0.6f, 0.95f));
+                }
+
+                return;
             }
-            else
+
+            if (guestQueue.Count < QueueCapacity)
             {
-                var bouncePoint = Vector3.Lerp(GuestEntrance, GuestExit, 0.15f);
-                mover.Init(GuestEntrance, bouncePoint, GuestExit, waitsForService: false);
+                guestQueue.Add(new QueuedGuest
+                {
+                    Mover = mover,
+                    PatienceRemaining = QueuePatienceSeconds,
+                    IsVip = isVip,
+                });
+
+                mover.Redirect(QueueSlotPosition(guestQueue.Count - 1), waitsForService: true);
+                return;
             }
+
+            // Schlange voll: der Gast dreht sichtbar am Eingang ab. Erst
+            // HIER ist wirklich jemand verloren -- nicht schon, wenn nur
+            // gerade keine Station frei ist.
+            var bouncePoint = Vector3.Lerp(GuestEntrance, GuestExit, 0.15f);
+            mover.Redirect(bouncePoint, waitsForService: false);
+            RegisterLostGuest("Die Schlange war zu lang -- ein Gast ist gegangen");
+        }
+
+        private static Vector3 QueueSlotPosition(int slot) => QueueFirstSlot + QueueSlotStep * slot;
+
+        /// <summary>
+        /// Setzt einen Gast (frisch gespawnt oder aus der Schlange
+        /// nachgerueckt) auf eine konkrete Station an. Die Reservierung in
+        /// guestAtStation passiert sofort, nicht erst bei Ankunft -- sonst
+        /// koennten zwei Gaeste zur selben freien Station loslaufen.
+        /// </summary>
+        private void AssignGuestToStation(GuestMover mover, int stationIndex, bool isVip)
+        {
+            if (!stationWorldPositions.TryGetValue(stationIndex, out var targetPosition))
+            {
+                return;
+            }
+
+            var station = state.Stations[stationIndex];
+            var cycleSeconds = (float)station.CycleSeconds(StationCatalog.All[stationIndex]);
+            var patience = Mathf.Max(GuestPatienceSeconds, cycleSeconds + GuestPatienceBufferSeconds);
+
+            mover.Redirect(targetPosition, waitsForService: true);
+            guestAtStation[stationIndex] = new GuestVisit
+            {
+                Mover = mover,
+                PatienceRemaining = patience,
+                TotalPatience = patience,
+                IsVip = isVip,
+            };
+        }
+
+        /// <summary>
+        /// Haelt die Schlange in Bewegung: abgelaufene Geduld raus, frei
+        /// gewordene Stationen an den Kopf der Schlange vergeben, Rest
+        /// nachruecken lassen. Bewusst jeden Frame statt ereignisgesteuert --
+        /// bei maximal QueueCapacity Eintraegen ist das billiger als die
+        /// Buchfuehrung, die eine ereignisgesteuerte Variante braeuchte.
+        /// </summary>
+        private void UpdateGuestQueue()
+        {
+            for (var i = guestQueue.Count - 1; i >= 0; i--)
+            {
+                var queued = guestQueue[i];
+                if (queued.Mover == null)
+                {
+                    guestQueue.RemoveAt(i);
+                    continue;
+                }
+
+                queued.PatienceRemaining -= Time.deltaTime;
+                if (queued.PatienceRemaining <= 0f)
+                {
+                    queued.Mover.Leave();
+                    guestQueue.RemoveAt(i);
+                    RegisterLostGuest("Ein Gast hat das Anstehen aufgegeben");
+                }
+            }
+
+            while (guestQueue.Count > 0)
+            {
+                var free = PickAvailableStationIndex();
+                if (!free.HasValue)
+                {
+                    break;
+                }
+
+                var next = guestQueue[0];
+                guestQueue.RemoveAt(0);
+                AssignGuestToStation(next.Mover, free.Value, next.IsVip);
+            }
+
+            for (var i = 0; i < guestQueue.Count; i++)
+            {
+                var slot = QueueSlotPosition(i);
+                // Nur umlenken, wenn sich der Platz wirklich geaendert hat --
+                // ein Redirect pro Frame wuerde HasArrivedAtStation dauernd
+                // zuruecksetzen, der Gast kaeme nie "an".
+                if ((guestQueue[i].Mover.CurrentTarget - slot).sqrMagnitude > 0.0001f)
+                {
+                    guestQueue[i].Mover.Redirect(slot, waitsForService: true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Stossbetrieb im Wechsel mit Ruhephasen (siehe RushIntervalSeconds).
+        /// Laeuft auf Echtzeit statt auf einem Ereignis -- der Reiz liegt
+        /// gerade darin, dass die Rush Hour den Spieler unangekuendigt in
+        /// einem beliebigen Ausbauzustand trifft.
+        /// </summary>
+        private void UpdateRushHour()
+        {
+            if (rushRemaining > 0f)
+            {
+                rushRemaining -= Time.deltaTime;
+                if (rushRemaining <= 0f)
+                {
+                    rushRemaining = 0f;
+                    rushCooldown = RushIntervalSeconds;
+                    if (rushBanner != null)
+                    {
+                        rushBanner.SetActive(false);
+                    }
+
+                    Toast.Show(canvasTransform, "Rush Hour vorbei -- gut gemacht!");
+                }
+
+                return;
+            }
+
+            rushCooldown -= Time.deltaTime;
+            if (rushCooldown > 0f)
+            {
+                return;
+            }
+
+            rushRemaining = RushDurationSeconds;
+            if (rushBanner != null)
+            {
+                rushBanner.SetActive(true);
+            }
+
+            Toast.Show(canvasTransform, $"RUSH HOUR! {RushSpawnMultiplier:0}x Gaeste fuer {RushDurationSeconds:0} Sekunden", new Color(1f, 0.82f, 0.45f, 0.95f));
+            PlaySfx("sfx-milestone");
+        }
+
+        /// <summary>
+        /// Uebertraegt den Simulationszustand auf die schwebenden Schilder
+        /// ueber den Stationen: wartender Gast mit Geduldsbalken und dem
+        /// Betrag, der beim sofortigen Bedienen herausspringt -- oder, bei
+        /// noch gesperrter Station, der Kaufhinweis, sobald er leistbar ist.
+        /// </summary>
+        private void UpdateStationBadges()
+        {
+            foreach (var kvp in stationBadges)
+            {
+                var index = kvp.Key;
+                var badge = kvp.Value;
+                if (badge == null || index >= state.Stations.Count)
+                {
+                    continue;
+                }
+
+                var visible = index == 0 || state.Stations[index - 1].IsUnlocked;
+                if (!visible)
+                {
+                    badge.Hide();
+                    continue;
+                }
+
+                var station = state.Stations[index];
+                var def = StationCatalog.All[index];
+
+                if (guestAtStation.TryGetValue(index, out var visit) && visit.Mover != null && visit.Mover.HasArrivedAtStation)
+                {
+                    var fraction = visit.TotalPatience > 0f ? visit.PatienceRemaining / visit.TotalPatience : 0f;
+                    var payout = station.YieldPerSale(def) * PrestigeMultiplier() * (visit.IsVip ? VipPayoutMultiplier : 1.0);
+                    badge.ShowWaitingGuest(
+                        (visit.IsVip ? "VIP  " : string.Empty) + NumberFormat.Format(payout),
+                        fraction,
+                        visit.IsVip);
+                    continue;
+                }
+
+                if (!station.IsUnlocked)
+                {
+                    var cost = station.UnlockCost(def);
+                    if (revenue >= cost)
+                    {
+                        badge.ShowHint($"Antippen: {NumberFormat.Format(cost)}");
+                        continue;
+                    }
+                }
+
+                badge.Hide();
+            }
+        }
+
+        /// <summary>
+        /// Ein Verkauf an einen konkreten wartenden Gast -- die einzige
+        /// Stelle, an der im Live-Betrieb Geld entsteht (PLANv3 K2). Rechnet
+        /// Trinkgeld (schnell bedient = mehr, BalancingCore.Service), den
+        /// VIP-Faktor und den Renovierungs-Multiplikator zusammen und
+        /// verbucht den Ruf-Gewinn.
+        /// </summary>
+        private void ServeGuest(int stationIndex, GuestVisit visit, BigDouble baseEarned, Vector3? position = null)
+        {
+            var waitFraction = visit.TotalPatience > 0f
+                ? 1f - Mathf.Clamp01(visit.PatienceRemaining / visit.TotalPatience)
+                : 0f;
+            var tipMultiplier = Service.TipMultiplier(waitFraction);
+            var effective = baseEarned * PrestigeMultiplier() * tipMultiplier * (visit.IsVip ? VipPayoutMultiplier : 1.0);
+
+            revenue += effective;
+            lifetimeRevenue += effective;
+            state.Reputation = Reputation.AfterServed(state.Reputation, tipMultiplier);
+            state.GuestsServed++;
+
+            visit.Mover.Leave();
+
+            var worldPosition = position
+                ?? (stationWorldPositions.TryGetValue(stationIndex, out var stationPosition) ? stationPosition : (Vector3?)null);
+            if (!worldPosition.HasValue)
+            {
+                return;
+            }
+
+            CoinBurst.SpawnAt(worldPosition.Value);
+
+            var label = NumberFormat.Format(effective);
+            if (tipMultiplier > 1.2)
+            {
+                label += "  +Trinkgeld";
+            }
+
+            FloatingText.Spawn(
+                canvasTransform,
+                worldPosition.Value + Vector3.up * 0.5f,
+                "+" + label,
+                visit.IsVip ? new Color(1f, 0.85f, 0.25f) : new Color(0.35f, 0.95f, 0.45f),
+                visit.IsVip ? 52 : 40);
+        }
+
+        /// <summary>
+        /// Gast unbedient verloren: Ruf faellt (BalancingCore.Reputation) und
+        /// der Spieler erfaehrt ueberhaupt davon. Bisher verschwand so ein
+        /// Gast wortlos -- ein Misserfolg, den niemand bemerkt, kann auch
+        /// niemanden zum Gegensteuern bewegen.
+        /// </summary>
+        private void RegisterLostGuest(string message = "Ein Gast ist unbedient gegangen -- Ruf gesunken")
+        {
+            state.Reputation = Reputation.AfterLost(state.Reputation);
+            state.GuestsLost++;
+            Toast.Show(canvasTransform, message, new Color(0.98f, 0.72f, 0.68f, 0.95f));
         }
 
         private int? PickAvailableStationIndex()
@@ -790,14 +1125,8 @@ namespace RestaurantIdle.Game
                 return;
             }
 
-            var effective = earned * PrestigeMultiplier();
-            revenue += effective;
-            lifetimeRevenue += effective;
-            RefreshUi();
-            FlashHeader();
-            PlaySfx("sfx-produce");
+            ServeGuest(i, visit, earned, burstPosition);
 
-            visit.Mover.Leave();
             if (visit.SteamEffect != null)
             {
                 Destroy(visit.SteamEffect);
@@ -805,11 +1134,9 @@ namespace RestaurantIdle.Game
 
             guestAtStation.Remove(i);
 
-            var position = burstPosition ?? (stationWorldPositions.TryGetValue(i, out var pos) ? pos : (Vector3?)null);
-            if (position.HasValue)
-            {
-                CoinBurst.SpawnAt(position.Value);
-            }
+            RefreshUi();
+            FlashHeader();
+            PlaySfx("sfx-produce");
         }
 
         /// <summary>
@@ -1030,6 +1357,26 @@ namespace RestaurantIdle.Game
                 Destroy(staff.gameObject);
             }
 
+            // Dasselbe fuer die laufende Gast-Simulation: ein Gast, der an
+            // einer soeben wieder gesperrten Station wartet, kann nie
+            // bedient werden und wuerde nur seine Geduld abwarten, um
+            // anschliessend Ruf zu kosten.
+            foreach (var guest in FindObjectsByType<GuestMover>(FindObjectsSortMode.None))
+            {
+                Destroy(guest.gameObject);
+            }
+
+            foreach (var visit in guestAtStation.Values)
+            {
+                if (visit.SteamEffect != null)
+                {
+                    Destroy(visit.SteamEffect);
+                }
+            }
+
+            guestAtStation.Clear();
+            guestQueue.Clear();
+
             RefreshUi();
             FlashHeader();
             PlaySfx("sfx-milestone");
@@ -1082,7 +1429,7 @@ namespace RestaurantIdle.Game
 
         private void RefreshUi()
         {
-            var guestFlow = GuestFlow.GuestFlowAt(state.MarketingLevel);
+            var guestFlow = EffectiveGuestFlow();
             var marketingCost = GuestFlow.NextMarketingCost(state.MarketingLevel);
             var unlockedCount = 0;
             var nextGoalIndex = -1;
@@ -1098,25 +1445,42 @@ namespace RestaurantIdle.Game
                 }
             }
 
-            // PLANv3.md Phase D: "kein sichtbares naechstes Ziel" war einer
-            // der konkreten Befunde -- diese Zeile ersetzt sieben
-            // gleichzeitig sichtbare Listenzeilen durch eine klare Ansage,
-            // was als naechstes zu tun ist.
-            var nextGoalText = nextGoalIndex < 0
-                ? "Alle Stationen freigeschaltet!"
-                : $"Naechstes Ziel: {StationCatalog.All[nextGoalIndex].Name} fuer {NumberFormat.Format(state.Stations[nextGoalIndex].UnlockCost(StationCatalog.All[nextGoalIndex]))}";
+            // Kopfzeile: nur noch die eine Zahl, um die sich alles dreht.
+            // Der vorherige fuenfzeilige Textblock hat jede Groesse gleich
+            // wichtig aussehen lassen -- Umsatz, Marketingstufe und
+            // naechstes Ziel standen unterschiedslos untereinander.
+            headerLabel.text = NumberFormat.Format(revenue);
 
-            headerLabel.text = $"{LocationTheme.For(state.CurrentLocation).Name}"
-                + $"\nUmsatz: {NumberFormat.Format(revenue)}\nLifetime: {NumberFormat.Format(lifetimeRevenue)}"
-                + $"\nGaestestrom: {NumberFormat.Format(guestFlow)}  (Stationen belegt: {guestAtStation.Count}/{unlockedCount})"
-                + $"\n{nextGoalText}"
-                + $"\nMarketing Stufe {state.MarketingLevel} -- naechste Stufe: {NumberFormat.Format(marketingCost)}";
+            statsLabel.text =
+                $"{LocationTheme.For(state.CurrentLocation).Name}    Ruf {state.Reputation:0}/100    x{PrestigeMultiplier():F2} Ertrag"
+                + $"\nGaeste/Min {NumberFormat.Format(guestFlow)}    Plaetze {guestAtStation.Count}/{Mathf.Max(unlockedCount, 1)}    Schlange {guestQueue.Count}/{QueueCapacity}"
+                + (rushRemaining > 0f ? $"    RUSH {rushRemaining:0}s" : string.Empty);
+
+            // Fortschrittsbalken statt reinem Text: PLANv3 Phase D wollte ein
+            // sichtbares naechstes Ziel -- ein Ziel, dessen Naeherkommen man
+            // sieht, zieht deutlich staerker als eine Zahl, die man mit einer
+            // anderen Zahl vergleichen muss.
+            if (nextGoalIndex < 0)
+            {
+                goalLabel.text = "Alle Stationen freigeschaltet -- Zeit zu renovieren!";
+                goalFill.fillAmount = 1f;
+            }
+            else
+            {
+                var goalDef = StationCatalog.All[nextGoalIndex];
+                var goalCost = state.Stations[nextGoalIndex].UnlockCost(goalDef);
+                goalLabel.text = $"Naechstes Ziel: {goalDef.Name}   {NumberFormat.Format(revenue)} / {NumberFormat.Format(goalCost)}";
+                goalFill.fillAmount = goalCost > BigDouble.Zero
+                    ? Mathf.Clamp01((float)(revenue / goalCost).ToDouble())
+                    : 1f;
+            }
+
+            marketingButtonLabel.text = $"Marketing Lv. {state.MarketingLevel}\n{NumberFormat.Format(marketingCost)}";
             marketingButtonRef.interactable = revenue >= marketingCost;
             marketingButtonImage.color = marketingButtonRef.interactable ? AffordableButtonColor : DefaultButtonColor;
 
             var prestigeGain = Prestige.StarsGainedFromReset(lifetimeRevenue, PrestigeK, prestigeStars);
-            prestigeLabel.text = $"Renovierungspunkte: {NumberFormat.Format(prestigeStars)} (x{PrestigeMultiplier():F2} Ertrag)"
-                + $"\nNaechste Renovierung bringt: +{NumberFormat.Format(prestigeGain)}";
+            prestigeButtonLabel.text = $"Renovieren  +{NumberFormat.Format(prestigeGain)}\n{NumberFormat.Format(prestigeStars)} Punkte";
             prestigeButtonRef.interactable = prestigeGain > BigDouble.Zero;
             prestigeButtonImage.color = prestigeButtonRef.interactable ? AffordableButtonColor : DefaultButtonColor;
         }
@@ -1273,6 +1637,25 @@ namespace RestaurantIdle.Game
             titleText.color = Color.black;
             titleText.text = "Einstellungen";
             titleGo.GetComponent<LayoutElement>().preferredHeight = 56;
+
+            // Servicebilanz: die beiden Zahlen, aus denen sich der Ruf
+            // ergibt (BalancingCore.Reputation). In der Kopfzeile steht nur
+            // der aktuelle Ruf-Wert -- warum er dort steht, wo er steht,
+            // laesst sich ohne diese Bilanz nicht nachvollziehen.
+            var served = state.GuestsServed;
+            var lost = state.GuestsLost;
+            var quota = served + lost > 0 ? 100.0 * served / (served + lost) : 100.0;
+
+            var statsGo = new GameObject("Stats", typeof(Text), typeof(LayoutElement));
+            statsGo.transform.SetParent(panelGo.transform, false);
+            var statsText = statsGo.GetComponent<Text>();
+            statsText.font = Resources.Load<Font>("Fonts/Fredoka");
+            statsText.fontSize = 22;
+            statsText.alignment = TextAnchor.MiddleCenter;
+            statsText.color = new Color(0.35f, 0.35f, 0.35f);
+            statsText.text = $"Ruf: {state.Reputation:0}/100  (x{Reputation.FlowMultiplier(state.Reputation):F2} Gaestestrom)"
+                + $"\nBedient: {served}    Verloren: {lost}    Quote: {quota:0}%";
+            statsGo.GetComponent<LayoutElement>().preferredHeight = 66;
 
             var muted = PlayerPrefs.GetInt(MutedPrefKey, 0) == 1;
             var soundButton = CreateButton(panelGo.transform, muted ? "Ton: Aus" : "Ton: An", () => { }, preferredHeight: 70);
@@ -1541,73 +1924,167 @@ namespace RestaurantIdle.Game
             scaler.referenceResolution = new Vector2(1080, 1920);
             scaler.matchWidthOrHeight = 0.5f;
 
+            canvasTransform = canvasObject.transform;
+            canvasRect = canvasObject.GetComponent<RectTransform>();
+
             new GameObject("EventSystem",
                 typeof(UnityEngine.EventSystems.EventSystem),
                 typeof(UnityEngine.EventSystems.StandaloneInputModule));
 
-            var scrollViewGo = new GameObject("ScrollView", typeof(Image), typeof(ScrollRect));
-            scrollViewGo.transform.SetParent(canvasObject.transform, false);
-            // Nur untere ~55% des Bildschirms -- PLANv2.md Abschnitt 1.2
-            // ("Die Szene ist das UI"): die 3D-Location bleibt im oberen
-            // Bereich sichtbar statt komplett von der Liste verdeckt zu
-            // werden.
-            var scrollViewRect = scrollViewGo.GetComponent<RectTransform>();
-            scrollViewRect.anchorMin = new Vector2(0f, 0f);
-            scrollViewRect.anchorMax = new Vector2(1f, 0.55f);
-            scrollViewRect.offsetMin = Vector2.zero;
-            scrollViewRect.offsetMax = Vector2.zero;
-            scrollViewGo.GetComponent<Image>().color = new Color(0.93f, 0.93f, 0.93f);
+            BuildTopBar();
+            BuildGoalBar();
+            BuildRushBanner();
+            BuildBottomBar();
+        }
 
-            var viewportGo = new GameObject("Viewport", typeof(RectMask2D));
-            viewportGo.transform.SetParent(scrollViewGo.transform, false);
-            var viewportRect = viewportGo.GetComponent<RectTransform>();
-            StretchToFillParent(viewportRect);
+        /// <summary>
+        /// Kopfleiste: Umsatz gross, Kontext klein, Einstellungen als Ecke.
+        /// Loest den zentralen Layoutfehler der Vorversion -- eine
+        /// Scroll-Liste ueber der unteren Bildschirmhaelfte, die 55 % der
+        /// Flaeche fuer statischen Text verbraucht hat, waehrend das
+        /// eigentliche Spiel (die 3D-Szene, PLANv2.md Abschnitt 1.2: "Die
+        /// Szene ist das UI") in den Rest gequetscht war.
+        /// </summary>
+        private void BuildTopBar()
+        {
+            var bar = CreateHudPanel("TopBar", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f),
+                new Vector2(-24f, 280f), new Vector2(0f, -14f));
 
-            var contentGo = new GameObject("Content", typeof(VerticalLayoutGroup), typeof(ContentSizeFitter));
-            contentGo.transform.SetParent(viewportGo.transform, false);
-            var contentRect = contentGo.GetComponent<RectTransform>();
-            // Oben ausgerichtet und ueber die volle Breite -- Hoehe ergibt sich
-            // aus dem Inhalt (ContentSizeFitter), damit die Liste wachsen kann.
-            contentRect.anchorMin = new Vector2(0, 1);
-            contentRect.anchorMax = new Vector2(1, 1);
-            contentRect.pivot = new Vector2(0.5f, 1f);
-            contentRect.anchoredPosition = Vector2.zero;
-            contentRect.sizeDelta = Vector2.zero;
+            headerLabel = CreateHudText(bar, "Money", new Vector2(0f, 0.44f), new Vector2(1f, 1f),
+                new Vector2(34f, 0f), new Vector2(-210f, -14f), fontSize: 76, TextAnchor.MiddleLeft, Color.black);
 
-            var layoutGroup = contentGo.GetComponent<VerticalLayoutGroup>();
-            layoutGroup.padding = new RectOffset(30, 30, 30, 30);
-            layoutGroup.spacing = 12;
-            layoutGroup.childForceExpandWidth = true;
-            layoutGroup.childForceExpandHeight = false;
-            layoutGroup.childControlWidth = true;
-            layoutGroup.childControlHeight = true;
+            statsLabel = CreateHudText(bar, "Stats", new Vector2(0f, 0f), new Vector2(1f, 0.44f),
+                new Vector2(36f, 14f), new Vector2(-34f, 0f), fontSize: 24, TextAnchor.MiddleLeft,
+                new Color(0.35f, 0.35f, 0.38f));
 
-            var fitter = contentGo.GetComponent<ContentSizeFitter>();
-            fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-            var scrollRect = scrollViewGo.GetComponent<ScrollRect>();
-            scrollRect.content = contentRect;
-            scrollRect.viewport = viewportRect;
-            scrollRect.horizontal = false;
-            scrollRect.vertical = true;
-
-            // 205 statt 130 -- bei 130 wurde die vierte Zeile (Marketing-
-            // Stufe) im Text-Rect abgeschnitten (siehe PLANv3 Phase-C-Fix),
-            // die fuenfte Zeile (Naechstes Ziel, PLANv3 Phase D) braucht
-            // noch mal Platz dazu.
-            headerLabel = CreateLabel(contentGo.transform, preferredHeight: 205);
-            var settingsButton = CreateButton(contentGo.transform, "Einstellungen", OpenSettings, preferredHeight: 56);
+            var settingsButton = CreateButton(bar, "Optionen", OpenSettings, preferredHeight: 84);
             settingsButton.GetComponent<Image>().color = DefaultButtonColor;
-            marketingButtonRef = CreateButton(contentGo.transform, "Marketing kaufen", BuyMarketing, preferredHeight: 70);
-            marketingButtonImage = marketingButtonRef.GetComponent<Image>();
-            prestigeLabel = CreateLabel(contentGo.transform, preferredHeight: 80);
-            prestigeButtonRef = CreateButton(contentGo.transform, "Renovieren", PrestigeReset, preferredHeight: 70);
-            prestigeButtonImage = prestigeButtonRef.GetComponent<Image>();
+            var settingsRect = settingsButton.GetComponent<RectTransform>();
+            settingsRect.anchorMin = new Vector2(1f, 1f);
+            settingsRect.anchorMax = new Vector2(1f, 1f);
+            settingsRect.pivot = new Vector2(1f, 1f);
+            settingsRect.sizeDelta = new Vector2(176f, 84f);
+            settingsRect.anchoredPosition = new Vector2(-22f, -18f);
+            settingsButton.GetComponentInChildren<Text>().fontSize = 24;
+        }
 
-            // Nutzer-Feedback: keine dauerhafte Liste mit Kaufen/Ausstattung/
-            // Manager-Buttons pro Station mehr -- das laeuft jetzt komplett
-            // ueber OpenStationDialog, ausgeloest durch Antippen der Station
-            // in der 3D-Szene (siehe HandleStationTap).
+        private void BuildGoalBar()
+        {
+            var bar = CreateHudPanel("GoalBar", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f),
+                new Vector2(-24f, 96f), new Vector2(0f, -306f));
+
+            var trackGo = new GameObject("Track", typeof(Image));
+            trackGo.transform.SetParent(bar, false);
+            var trackRect = trackGo.GetComponent<RectTransform>();
+            trackRect.anchorMin = Vector2.zero;
+            trackRect.anchorMax = Vector2.one;
+            trackRect.offsetMin = new Vector2(18f, 16f);
+            trackRect.offsetMax = new Vector2(-18f, -16f);
+            var track = trackGo.GetComponent<Image>();
+            track.color = new Color(0f, 0f, 0f, 0.12f);
+            track.raycastTarget = false;
+
+            var fillGo = new GameObject("Fill", typeof(Image));
+            fillGo.transform.SetParent(trackGo.transform, false);
+            var fillRect = fillGo.GetComponent<RectTransform>();
+            fillRect.anchorMin = Vector2.zero;
+            fillRect.anchorMax = Vector2.one;
+            fillRect.offsetMin = Vector2.zero;
+            fillRect.offsetMax = Vector2.zero;
+            goalFill = fillGo.GetComponent<Image>();
+            goalFill.type = Image.Type.Filled;
+            goalFill.fillMethod = Image.FillMethod.Horizontal;
+            goalFill.color = new Color(0.45f, 0.8f, 0.45f, 0.9f);
+            goalFill.raycastTarget = false;
+
+            goalLabel = CreateHudText(bar, "GoalText", Vector2.zero, Vector2.one,
+                new Vector2(26f, 0f), new Vector2(-26f, 0f), fontSize: 26, TextAnchor.MiddleCenter, Color.black);
+        }
+
+        private void BuildRushBanner()
+        {
+            var bar = CreateHudPanel("RushBanner", new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+                new Vector2(720f, 78f), new Vector2(0f, -424f));
+            bar.GetComponent<Image>().color = new Color(1f, 0.78f, 0.35f, 0.96f);
+
+            CreateHudText(bar, "RushText", Vector2.zero, Vector2.one, new Vector2(20f, 0f), new Vector2(-20f, 0f),
+                fontSize: 32, TextAnchor.MiddleCenter, new Color(0.35f, 0.2f, 0f)).text = "RUSH HOUR -- alle Plaetze besetzen!";
+
+            rushBanner = bar.gameObject;
+            rushBanner.SetActive(false);
+        }
+
+        /// <summary>
+        /// Zwei globale Aktionen am unteren Rand -- bewusst NUR globale.
+        /// Alles, was eine einzelne Station betrifft, laeuft ausschliesslich
+        /// ueber das Antippen der Station und den daraufhin geoeffneten
+        /// Dialog (Nutzer-Feedback, siehe HandleStationTap/OpenStationDialog).
+        /// </summary>
+        private void BuildBottomBar()
+        {
+            var bar = CreateHudPanel("BottomBar", new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(-24f, 176f), new Vector2(0f, 16f));
+
+            var layout = bar.gameObject.AddComponent<HorizontalLayoutGroup>();
+            layout.padding = new RectOffset(16, 16, 16, 16);
+            layout.spacing = 16;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = true;
+            layout.childControlWidth = true;
+            layout.childControlHeight = true;
+
+            marketingButtonRef = CreateButton(bar, "Marketing", BuyMarketing, preferredHeight: 144);
+            marketingButtonImage = marketingButtonRef.GetComponent<Image>();
+            marketingButtonLabel = marketingButtonRef.GetComponentInChildren<Text>();
+
+            prestigeButtonRef = CreateButton(bar, "Renovieren", PrestigeReset, preferredHeight: 144);
+            prestigeButtonImage = prestigeButtonRef.GetComponent<Image>();
+            prestigeButtonLabel = prestigeButtonRef.GetComponentInChildren<Text>();
+        }
+
+        /// <summary>Kenney-9-Slice-Karte als HUD-Flaeche -- gleiches Grundmuster wie CreateButton (Image aussen, Inhalt innen), aber frei positioniert statt in einer Layout-Gruppe.</summary>
+        private RectTransform CreateHudPanel(string name, Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot, Vector2 sizeDelta, Vector2 anchoredPosition)
+        {
+            var go = new GameObject(name, typeof(Image));
+            go.transform.SetParent(canvasTransform, false);
+
+            var rect = go.GetComponent<RectTransform>();
+            rect.anchorMin = anchorMin;
+            rect.anchorMax = anchorMax;
+            rect.pivot = pivot;
+            rect.sizeDelta = sizeDelta;
+            rect.anchoredPosition = anchoredPosition;
+
+            var image = go.GetComponent<Image>();
+            var sprite = Resources.Load<Sprite>("UI/panel-rectangle");
+            if (sprite != null)
+            {
+                image.sprite = sprite;
+                image.type = Image.Type.Sliced;
+            }
+
+            image.color = new Color(1f, 1f, 1f, 0.96f);
+            return rect;
+        }
+
+        private static Text CreateHudText(Transform parent, string name, Vector2 anchorMin, Vector2 anchorMax, Vector2 offsetMin, Vector2 offsetMax, int fontSize, TextAnchor alignment, Color color)
+        {
+            var go = new GameObject(name, typeof(Text));
+            go.transform.SetParent(parent, false);
+
+            var rect = go.GetComponent<RectTransform>();
+            rect.anchorMin = anchorMin;
+            rect.anchorMax = anchorMax;
+            rect.offsetMin = offsetMin;
+            rect.offsetMax = offsetMax;
+
+            var text = go.GetComponent<Text>();
+            text.font = Resources.Load<Font>("Fonts/Fredoka");
+            text.fontSize = fontSize;
+            text.alignment = alignment;
+            text.color = color;
+            text.raycastTarget = false;
+            return text;
         }
 
         private static void StretchToFillParent(RectTransform rect)
@@ -1617,51 +2094,6 @@ namespace RestaurantIdle.Game
             rect.pivot = new Vector2(0.5f, 0.5f);
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
-        }
-
-        /// <summary>
-        /// PLANv3.md Phase E: Text sass bisher direkt auf dem grauen Scroll-
-        /// Hintergrund -- keinerlei visuelle Gruppierung. Jetzt eine eigene
-        /// Kenney-UI-Pack-Karte (panel-rectangle, 9-Slice) je Zeile, Text als
-        /// eingerueckter Kind-Node darauf statt auf demselben GameObject --
-        /// gleiches Grundmuster wie CreateButton (Image aussen, Text innen).
-        /// </summary>
-        private static Text CreateLabel(Transform parent, float preferredHeight)
-        {
-            var go = new GameObject("Label", typeof(Image), typeof(LayoutElement));
-            go.transform.SetParent(parent, false);
-
-            var panelImage = go.GetComponent<Image>();
-            var panelSprite = Resources.Load<Sprite>("UI/panel-rectangle");
-            if (panelSprite != null)
-            {
-                panelImage.sprite = panelSprite;
-                panelImage.type = Image.Type.Sliced;
-            }
-
-            panelImage.color = Color.white;
-            panelImage.raycastTarget = false;
-
-            var layoutElement = go.GetComponent<LayoutElement>();
-            layoutElement.preferredHeight = preferredHeight;
-            layoutElement.flexibleWidth = 1;
-
-            var textGo = new GameObject("Text", typeof(Text));
-            textGo.transform.SetParent(go.transform, false);
-            var textRect = textGo.GetComponent<RectTransform>();
-            textRect.anchorMin = Vector2.zero;
-            textRect.anchorMax = Vector2.one;
-            textRect.pivot = new Vector2(0.5f, 0.5f);
-            textRect.offsetMin = new Vector2(18, 8);
-            textRect.offsetMax = new Vector2(-18, -8);
-
-            var text = textGo.GetComponent<Text>();
-            text.font = Resources.Load<Font>("Fonts/Fredoka");
-            text.fontSize = 28;
-            text.alignment = TextAnchor.UpperLeft;
-            text.color = Color.black;
-
-            return text;
         }
 
         private static Button CreateButton(Transform parent, string label, UnityEngine.Events.UnityAction onClick, float preferredHeight)

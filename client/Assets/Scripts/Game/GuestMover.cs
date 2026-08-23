@@ -19,8 +19,15 @@ namespace RestaurantIdle.Game
     /// </summary>
     public class GuestMover : MonoBehaviour
     {
-        private const float MoveSpeed = 1.8f;
+        private const float BaseMoveSpeed = 1.8f;
         private const float ArrivalThreshold = 0.05f;
+
+        /// <summary>
+        /// Leichte Streuung pro Gast (siehe GameManager.SpawnGuest) -- eine
+        /// Reihe exakt gleich schnell laufender Gaeste liest sich als
+        /// Foerderband, nicht als Publikum.
+        /// </summary>
+        public float SpeedMultiplier { get; set; } = 1f;
 
         public enum Phase
         {
@@ -30,6 +37,9 @@ namespace RestaurantIdle.Game
         }
 
         public Phase CurrentPhase { get; private set; }
+
+        /// <summary>Aktuelles Laufziel -- der Aufrufer kann damit pruefen, ob ein erneutes Redirect ueberhaupt noetig ist.</summary>
+        public Vector3 CurrentTarget => stationPosition;
 
         /// <summary>True, sobald die Zielposition (Station oder Abbiegepunkt bei "kein Platz frei") erreicht ist.</summary>
         public bool HasArrivedAtStation { get; private set; }
@@ -50,6 +60,27 @@ namespace RestaurantIdle.Game
             transform.position = entrancePosition;
             stationPosition = stationPos;
             exitPosition = exitPos;
+            this.waitsForService = waitsForService;
+            CurrentPhase = Phase.WalkingToStation;
+            HasArrivedAtStation = false;
+        }
+
+        /// <summary>
+        /// Neues Ziel waehrend des Spiels -- gebraucht fuer die Warteschlange
+        /// (PLANv3 Phase E, "echtes Raumlayout/Warteschlange"): ein
+        /// anstehender Gast rueckt auf, wenn vor ihm jemand geht, und laeuft
+        /// von seinem Warteplatz aus zur Station, sobald eine frei wird.
+        /// Kein Zurueckholen eines Gastes, der schon auf dem Weg nach
+        /// draussen ist -- der ist fuer diesen Besuch verloren.
+        /// </summary>
+        public void Redirect(Vector3 newTarget, bool waitsForService)
+        {
+            if (CurrentPhase == Phase.WalkingToExit)
+            {
+                return;
+            }
+
+            stationPosition = newTarget;
             this.waitsForService = waitsForService;
             CurrentPhase = Phase.WalkingToStation;
             HasArrivedAtStation = false;
@@ -95,7 +126,7 @@ namespace RestaurantIdle.Game
 
         private void MoveToward(Vector3 target)
         {
-            transform.position = Vector3.MoveTowards(transform.position, target, MoveSpeed * Time.deltaTime);
+            transform.position = Vector3.MoveTowards(transform.position, target, BaseMoveSpeed * SpeedMultiplier * Time.deltaTime);
         }
 
         private bool Reached(Vector3 target) => Vector3.Distance(transform.position, target) < ArrivalThreshold;
