@@ -37,9 +37,9 @@ namespace RestaurantIdle.Game
             spriteRenderer = GetComponent<SpriteRenderer>();
             workFrames = new[]
             {
-                GameAssets.Sprite("Characters/guest-run0"),
-                GameAssets.Sprite("Characters/guest-run1"),
-                GameAssets.Sprite("Characters/guest-run2"),
+                GameAssets.LoadSprite("Characters/guest-run0"),
+                GameAssets.LoadSprite("Characters/guest-run1"),
+                GameAssets.LoadSprite("Characters/guest-run2"),
             };
 
             // Eine volle Bildfolge je Wipp-Periode: Bewegung und Bildwechsel

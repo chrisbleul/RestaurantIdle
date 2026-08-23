@@ -68,7 +68,7 @@ namespace RestaurantIdle.Game
             rect.sizeDelta = new Vector2(820, 64);
 
             var background = go.GetComponent<Image>();
-            var sprite = GameAssets.Sprite("UI/panel-rectangle");
+            var sprite = GameAssets.LoadSprite("UI/panel-rectangle");
             if (sprite != null)
             {
                 background.sprite = sprite;

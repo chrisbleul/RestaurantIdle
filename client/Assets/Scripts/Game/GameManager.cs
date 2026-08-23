@@ -705,7 +705,7 @@ namespace RestaurantIdle.Game
             // Natur aus keinen Raycast.
             var guest = new GameObject(isVip ? "Guest_VIP" : "Guest", typeof(SpriteRenderer));
             var spriteRenderer = guest.GetComponent<SpriteRenderer>();
-            spriteRenderer.sprite = GameAssets.Sprite("Characters/guest-idle");
+            spriteRenderer.sprite = GameAssets.LoadSprite("Characters/guest-idle");
             spriteRenderer.color = isVip ? VipTint : Color.white;
             guest.transform.localScale = Vector3.one * (isVip ? GuestSpriteScale * 1.15f : GuestSpriteScale);
             if (GameAssets.MainCamera != null)
@@ -1419,7 +1419,7 @@ namespace RestaurantIdle.Game
             // Zylinder neben lauter Charakteren.
             var worker = new GameObject($"Staff_{i}", typeof(SpriteRenderer));
             var spriteRenderer = worker.GetComponent<SpriteRenderer>();
-            spriteRenderer.sprite = GameAssets.Sprite("Characters/guest-idle");
+            spriteRenderer.sprite = GameAssets.LoadSprite("Characters/guest-idle");
 
             // Deutlich anderer Farbton als jeder Gast: der Spieler muss auf
             // einen Blick sehen koennen, welche Station bereits automatisch
@@ -1756,7 +1756,7 @@ namespace RestaurantIdle.Game
             panelRect.sizeDelta = new Vector2(760, 0);
 
             var panelImage = panelGo.GetComponent<Image>();
-            var panelSprite = GameAssets.Sprite("UI/panel-rectangle");
+            var panelSprite = GameAssets.LoadSprite("UI/panel-rectangle");
             if (panelSprite != null)
             {
                 panelImage.sprite = panelSprite;
@@ -1847,7 +1847,7 @@ namespace RestaurantIdle.Game
             panelRect.sizeDelta = new Vector2(760, 0);
 
             var panelImage = panelGo.GetComponent<Image>();
-            var panelSprite = GameAssets.Sprite("UI/panel-rectangle");
+            var panelSprite = GameAssets.LoadSprite("UI/panel-rectangle");
             if (panelSprite != null)
             {
                 panelImage.sprite = panelSprite;
@@ -1942,7 +1942,7 @@ namespace RestaurantIdle.Game
             panelRect.sizeDelta = new Vector2(700, 0);
 
             var panelImage = panelGo.GetComponent<Image>();
-            var panelSprite = GameAssets.Sprite("UI/panel-rectangle");
+            var panelSprite = GameAssets.LoadSprite("UI/panel-rectangle");
             if (panelSprite != null)
             {
                 panelImage.sprite = panelSprite;
@@ -2035,7 +2035,7 @@ namespace RestaurantIdle.Game
             panelRect.sizeDelta = new Vector2(780, 0);
 
             var panelImage = panelGo.GetComponent<Image>();
-            var panelSprite = GameAssets.Sprite("UI/panel-rectangle");
+            var panelSprite = GameAssets.LoadSprite("UI/panel-rectangle");
             if (panelSprite != null)
             {
                 panelImage.sprite = panelSprite;
@@ -2065,7 +2065,7 @@ namespace RestaurantIdle.Game
             titleText.text = def.Name;
             titleGo.GetComponent<LayoutElement>().preferredHeight = 54;
 
-            var icon = GameAssets.Sprite($"Icons/{StationIconNames[stationIndex]}");
+            var icon = GameAssets.LoadSprite($"Icons/{StationIconNames[stationIndex]}");
             if (icon != null)
             {
                 var iconGo = new GameObject("Icon", typeof(Image), typeof(LayoutElement));
@@ -2234,7 +2234,7 @@ namespace RestaurantIdle.Game
             // Testlauf bei 0 Umsatz schon komplett auf Gruen. Irgendein
             // Sprite muss also gesetzt sein, damit Image.Type.Filled
             // ueberhaupt greift.
-            goalFill.sprite = GameAssets.Sprite("UI/panel-rectangle");
+            goalFill.sprite = GameAssets.LoadSprite("UI/panel-rectangle");
             goalFill.type = Image.Type.Filled;
             goalFill.fillMethod = Image.FillMethod.Horizontal;
             goalFill.color = new Color(0.45f, 0.8f, 0.45f, 0.9f);
@@ -2299,7 +2299,7 @@ namespace RestaurantIdle.Game
             rect.anchoredPosition = anchoredPosition;
 
             var image = go.GetComponent<Image>();
-            var sprite = GameAssets.Sprite("UI/panel-rectangle");
+            var sprite = GameAssets.LoadSprite("UI/panel-rectangle");
             if (sprite != null)
             {
                 image.sprite = sprite;
@@ -2351,7 +2351,7 @@ namespace RestaurantIdle.Game
             // irgendeinem Grund aus (Asset fehlt), bleibt die reine
             // Farbflaeche als Fallback -- kein kaputter, unsichtbarer Button.
             var buttonImage = go.GetComponent<Image>();
-            var buttonSprite = GameAssets.Sprite("UI/button-rectangle");
+            var buttonSprite = GameAssets.LoadSprite("UI/button-rectangle");
             if (buttonSprite != null)
             {
                 buttonImage.sprite = buttonSprite;

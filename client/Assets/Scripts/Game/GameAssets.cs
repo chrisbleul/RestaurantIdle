@@ -56,7 +56,14 @@ namespace RestaurantIdle.Game
             }
         }
 
-        public static Sprite Sprite(string resourcePath)
+        /// <summary>
+        /// Heisst bewusst nicht schlicht "Sprite": eine Methode mit dem
+        /// Namen eines Typs verdeckt diesen Typ innerhalb der Klasse. Ein
+        /// Aufruf von Sprite.Create() weiter unten loeste dadurch auf die
+        /// Methode statt auf UnityEngine.Sprite auf und liess sich nicht
+        /// kompilieren.
+        /// </summary>
+        public static Sprite LoadSprite(string resourcePath)
         {
             if (Sprites.TryGetValue(resourcePath, out var cached) && cached != null)
             {
