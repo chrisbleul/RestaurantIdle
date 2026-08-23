@@ -1386,10 +1386,20 @@ namespace RestaurantIdle.Game
         {
             var theme = LocationTheme.For(state.CurrentLocation);
 
+            var ground = GameObject.Find("Ground");
+            if (ground != null && ground.TryGetComponent<MeshRenderer>(out var groundRenderer))
+            {
+                groundRenderer.sharedMaterial.SetColor(BaseColorId, theme.Ground);
+            }
+
+            // Eigene Farbe, nicht theme.Ground: der Innenboden bekam bisher
+            // den Aussen-Farbwert und war damit exakt so gruen wie die
+            // Wiese -- im Testlauf war vom Gastraum schlicht nichts zu
+            // erkennen.
             var floor = GameObject.Find("InteriorFloor");
             if (floor != null && floor.TryGetComponent<MeshRenderer>(out var floorRenderer))
             {
-                floorRenderer.sharedMaterial.SetColor(BaseColorId, theme.Ground);
+                floorRenderer.sharedMaterial.SetColor(BaseColorId, theme.Floor);
             }
 
             // sharedMaterial waere hier falsch: die Wandsegmente kommen aus

@@ -179,12 +179,12 @@ namespace RestaurantIdle.Editor
             var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
             floor.name = "InteriorFloor";
             floor.transform.position = new Vector3(center.x, 0.012f, center.z)
-                + RestaurantLayout.GuestSide * 1.3f
-                - RestaurantLayout.CounterDirection * 1.4f;
+                + RestaurantLayout.GuestSide * 1.6f
+                - RestaurantLayout.CounterDirection * 1.6f;
             floor.transform.rotation = RestaurantLayout.CounterRotation;
             // Plane ist nativ 10x10 Einheiten: lokale X-Achse laeuft nach
             // dem Drehen entlang der Theke, lokale Z-Achse quer dazu.
-            floor.transform.localScale = new Vector3(1.3f, 1f, 0.75f);
+            floor.transform.localScale = new Vector3(1.55f, 1f, 0.95f);
             floor.GetComponent<MeshRenderer>().sharedMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
             {
                 color = new Color(0.82f, 0.71f, 0.56f),
