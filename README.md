@@ -5,12 +5,41 @@ Quelle für offene Arbeit. `PLAN.md`, `PLANv2.md` und `PLANv3.md` sind
 abgeschlossen und dokumentieren die jeweilige Analyse -- ihre Checklisten
 sind überholt.
 
-Kurzstand: Ökonomie (zwei Upgrade-Achsen), Auftragskette (Geld entsteht nur
-beim Servieren eines echten Gastes), Warteschlange, Ruf/Trinkgeld, Rush Hour
-und der Art-Pass im Hochformat sind umgesetzt. Offen sind vor allem
-Retention-Inhalte und echtes Balancing, siehe PLANv4 Abschnitt 5. WebGL-CI
-ist eingerichtet, aber noch nicht grün -- siehe "Bekannte offene Punkte"
-unten.
+Kurzstand (24.08.2026): Ökonomie (zwei Upgrade-Achsen), Auftragskette (Geld
+entsteht nur beim Servieren eines echten Gastes), Warteschlange, Ruf,
+Trinkgeld, Rush Hour, VIP-Gäste und der Art-Pass im Hochformat sind umgesetzt
+und im laufenden Editor visuell geprüft. Die WebGL-CI ist grün: jeder Push auf
+`main` ist nach 15--20 Minuten live unter <https://cgo-app.de/restaurant/>
+(hinter dem Plattform-Login). Offen sind vor allem Retention-Inhalte
+(Tagesziele) und echtes Balancing mit Daten, siehe PLANv4 Abschnitt 5.
+
+## Entwicklungsstand
+
+Ausführlich in `PLANv4.md` Abschnitt 4; hier die Kurzfassung, damit klar ist,
+worauf man aufsetzt.
+
+- **Simulation.** Geld entsteht ausschließlich in einem einzigen Pfad
+  (`GameManager.ServeGuest`) beim Bedienen eines echten Gastes. Daran hängen
+  Trinkgeld (bis +50 % bei sofortiger Bedienung), Ruf (0--100, wirkt als
+  Multiplikator auf den Gästestrom), VIP-Faktor und Prestige-Multiplikator.
+  Warteschlange mit vier Plätzen und eigener Geduld, Rush Hour alle 150 s.
+  Die reine Rechnerei liegt Unity-frei in `BalancingCore` (`Service.cs` für
+  Trinkgeld und Ruf) und ist unit-getestet.
+- **Bedienung.** Jede Stationsaktion läuft über Antippen der Station und den
+  daraufhin geöffneten Dialog. Es gibt bewusst keine Dauerbuttons pro Station;
+  am unteren Rand stehen nur die beiden globalen Aktionen.
+- **Darstellung.** Hochformat 1080x1920. Kopfleiste, Ziel-Fortschrittsbalken,
+  Schilder über den Stationen mit Geduldsbalken, aufsteigende Beträge am
+  Verkaufsort, Toasts. Gastraum aus dem Kenney Furniture Kit, Modelle nach
+  gemessener Zielgröße platziert (die Kits sind untereinander *nicht*
+  maßstabsgetreu), prozeduraler Fliesenboden, weiche Schatten,
+  Bodenschatten-Flecken unter den Figuren, Post-Processing.
+- **Technik.** Der Grundriss steht an genau einer Stelle
+  (`Game/RestaurantLayout.cs`) und wird von Editor-Szenenbau *und* Laufzeit
+  gemeinsam benutzt. Die Kamera rahmt selbsttätig den freien Streifen
+  zwischen den HUD-Leisten. Gemeinsames Partikel-Material, dauerhafte
+  AudioSource und Asset-Cache (`Game/GameAssets.cs`), 60 fps gesetzt.
+  57 Balancing-Tests grün.
 
 ## Struktur
 
@@ -18,21 +47,34 @@ unten.
   Meilensteine, Prestige und Offline-Ertrag, auf `BigDouble`
   (vendored von [Razenpok/BreakInfinity.cs](https://github.com/Razenpok/BreakInfinity.cs)).
   Unit-Tests in `game/BalancingCore.Tests` (`dotnet test`).
-- `client` -- Unity-Projekt (2D URP). `Assets/Scripts/BalancingCore` ist eine
-  1:1-Kopie von `game/BalancingCore` (bewusst dupliziert statt verlinkt --
-  Unity kompiliert alles unter `Assets/` selbst, ein Projektverweis über
-  Ordnergrenzen hinweg wäre nur Fragilität) -- inklusive der neuen
-  `StationCatalog.cs` (alle sieben Stationen aus PLAN.md Abschnitt 1) und
-  `GuestFlow.cs` (Marketing/Gästestrom-Deckel), beide mit Unit-Tests in
-  `game/BalancingCore.Tests`. `Assets/Scripts/Game`: `Station.cs` (Zustand
-  einer Instanz, bekommt ihre `StationDefinition` vom Aufrufer statt sie
-  selbst zu halten), `GameManager.cs` (Tick-Loop über alle Stationen,
-  Manager-Gating -- ohne Manager produziert eine Station nicht automatisch,
-  nur per Klick, siehe PLAN.md Abschnitt 1 --, Gästestrom-Deckel, baut sein
-  UI weiterhin zur Laufzeit selbst -- kein Art-Pass vor Phase 4),
-  `SaveSystem.cs` (lokaler JSON-Save). `Assets/Editor/CIBuild.cs` baut Szene
-  und WebGL-Player programmatisch für CI (robuster als eine handgepflegte
-  `.unity`-Datei).
+- `client` -- Unity-Projekt (URP, orthografisch-isometrisch, Hochformat).
+  `Assets/Scripts/BalancingCore` ist eine 1:1-Kopie von `game/BalancingCore`
+  (bewusst dupliziert statt verlinkt -- Unity kompiliert alles unter
+  `Assets/` selbst, ein Projektverweis über Ordnergrenzen hinweg wäre nur
+  Fragilität); **Änderungen dort müssen von Hand in beide Ordner**, sonst
+  testet `dotnet test` etwas anderes als das Spiel ausführt.
+  `Assets/Scripts/Game`:
+  - `GameManager.cs` -- Tick-Loop, Warteschlange, Rush Hour, Ruf, HUD-Aufbau
+    zur Laufzeit, Kamera-Rahmung. Der eine Geldpfad ist `ServeGuest`.
+  - `RestaurantLayout.cs` -- Grundriss (Stationsabstände, Gastplätze,
+    Warteschlange, Eingang/Ausgang) als gemeinsame Wahrheit für
+    `Assets/Editor/CIBuild.cs` und die Laufzeit.
+  - `GameAssets.cs` -- Cache für Kamera, Font, Sprites, Partikel-Material und
+    eine dauerhafte 2D-AudioSource (statt pro Sound ein GameObject).
+  - `GroundShadow.cs`, `SurfaceTexture.cs` -- Bodenschatten unter den Figuren
+    (versetzt entlang der Lichtrichtung, sonst verdeckt das Billboard sie
+    selbst) und prozedurale Fliesen-/Korn-Texturen.
+  - `Station.cs`, `StationBadge.cs`, `StationHotspot.cs`, `GuestMover.cs`,
+    `GuestSpriteAnimator.cs`, `StaffWorker.cs`, `FloatingText.cs`,
+    `CoinBurst.cs`, `Toast.cs`, `SteamEffect.cs`, `LocationTheme.cs`,
+    `SaveSystem.cs`, `BackendClient.cs`.
+
+  `Assets/Editor`: `CIBuild.cs` baut Szene und WebGL-Player programmatisch
+  (robuster als eine handgepflegte `.unity`-Datei; die Szene wird nur über
+  den Menüpunkt `RestaurantIdle/Szene fuer Editor erzeugen` oder bei
+  fehlender Datei neu erzeugt), `UrpSetup.cs` setzt Pipeline-Qualität und
+  Post-Processing-Profil, `GameViewPortrait.cs` stellt den Game-View aufs
+  Hochformat.
 - `apps/api` -- Fastify-Backend (Node/TS): Save-Endpunkte, serverautoritativer
   Offline-Progress, Auth über `@cgo/platform-auth`. Liefert unter `apps/api/public/webgl`
   zusätzlich den WebGL-Build aus (kein eigener "web"-Service nötig, nginx
@@ -83,22 +125,20 @@ Danach baut `ci.yml` bei jedem Push auf `main` automatisch WebGL, deployt es
 auf `cgo-app.de/restaurant/` -- kein weiterer manueller Schritt. Alles
 andere (Repo, Deploy-Key, Backend, Registrierung) ist bereits eingerichtet.
 
+Der frühere 401-Fehler im `webgl-build`-Job (`UnityConnectLoginRequest:
+Failed to login`) ist erledigt; die Pipeline läuft seit dem Lizenz-Setup
+durch.
+
 ### Bekannte offene Punkte
 
-- **WebGL-CI schlägt aktuell im `webgl-build`-Job ab** (Stand 2026-08-20):
-  `UnityConnectLoginRequest: Failed to login ... HTTP error code 401`, obwohl
-  `UNITY_LICENSE` (echtes, gültiges `.ulf`, per Hub-GUI-Login aktiviert),
-  `UNITY_EMAIL` und `UNITY_PASSWORD` (frisch bei id.unity.com gesetzt, kein
-  2FA) alle gesetzt sind. Noch nicht diagnostiziert: ob dasselbe
-  Zugangsdaten-Paar über Unity Hubs eigenen GUI-Login (nicht die alte
-  `core.cloud.unity3d.com/api/login`-API, die game-ci intern nutzt)
-  funktioniert -- das würde zeigen, ob es ein Account-Problem oder ein
-  API-spezifisches ist. Nächster Schritt bei Gelegenheit: diesen Vergleich
-  in einem frischen Codespace nachholen.
-- `client/` wurde nie in einem echten Unity-Editor geöffnet (nur als Dateien
-  geschrieben, ohne visuelle Prüfung) -- funktionierender Code nach bestem
-  Wissen, aber ungetestet im Editor. `game/BalancingCore` (die eigentliche
-  Spiellogik dahinter) ist vollständig unit-getestet (`dotnet test`).
+- Balancing ist gesetzt, aber nicht gemessen -- `PrestigeK`, die Kostenkurven
+  und der Ruf-Verlust je verlorenem Gast wurden nach Testläufen nach Gefühl
+  korrigiert (z. B. `LossPerLostGuest` von 3.0 auf 1.5 halbiert, weil der Ruf
+  ohne Manager binnen zwei Minuten auf 0 fiel). Ereignis-Logging als Datenbasis
+  fehlt (PLANv4 R2).
+- Das Laufzeit-UI benutzt noch `UnityEngine.UI.Text` statt TextMeshPro, es gibt
+  kein Object Pooling und keine Unity-Play-Mode-Tests (PLANv4 R4).
+- iOS ist bewusst noch nicht angefasst (PLANv4 R5).
 
 ## Entwicklung
 
@@ -108,4 +148,41 @@ cd game && dotnet test
 ```
 
 Unity-Projekt lokal öffnen: Unity Hub → "Add" → `client`-Ordner (Editor-Version
-6000.0.32f1, siehe `client/ProjectSettings/ProjectVersion.txt`).
+6000.0.82f1, siehe `client/ProjectSettings/ProjectVersion.txt`).
+
+## Arbeitsumgebung: visuelle Prüfung im Editor
+
+Entwickelt wird auf zwei EC2-Instanzen: `uiFlow` (Graviton, hostet
+`cgo-app.de`, hier liegt das Repo und läuft der Deploy) und eine
+x86-`unity-instance` mit echtem Unity-Editor. Der Editor ist der einzige Weg,
+Änderungen an der Optik *zu sehen* -- der WebGL-Build in CI dauert 15--20
+Minuten und eignet sich nicht als Rückkopplung.
+
+Nach jedem Stop/Start der `unity-instance`:
+
+1. Neue Public IP in `~/.ssh/config` unter `Host unity-instance` eintragen.
+2. X-Server selbst starten (es ist niemand per RDP eingeloggt):
+   `nohup Xvfb :11 -screen 0 1600x1000x24 &`, dann `DISPLAY=:11 nohup xfwm4 &`.
+   Damit funktionieren `xwd`-Screenshots und `xdotool`-Klicks.
+3. `client/Packages/manifest.json` prüfen -- ein `git pull` überschreibt den
+   MCP-Unity-Eintrag. Er muss als Git-URL dastehen, nicht als `file:`-Pfad:
+   `"com.gamelovers.mcp-unity": "https://github.com/CoderGamester/mcp-unity.git"`.
+4. `DISPLAY=:11 ~/Unity/Hub/Editor/6000.0.82f1/Editor/Unity -projectPath ~/RestaurantIdle/client`
+5. Menüpunkt `RestaurantIdle/Game-View auf Portrait (1080x1920)` ausführen --
+   sonst prüft man das Handyspiel im Querformat und sieht die falschen Ränder.
+
+Gesteuert wird der Editor über die MCP-Unity-WebSocket-Brücke (Port 8090) mit
+`~/mcp_call.py` auf der `unity-instance`.
+
+**Zwei Fallen, die schon Zeit gekostet haben:**
+
+- `get_console_logs` mit `logType: "error"` meldete *keine* Fehler, obwohl die
+  Kompilierung fehlgeschlagen war. Verlässlich ist stattdessen, ob
+  `set_play_mode_status` `isPlaying: true` zurückgibt -- Unity geht bei
+  Compile-Fehlern nicht in den Play-Modus.
+- Bei 1080x1920 zeigt der Game-View auf 0,25 skaliert an; ein Zoom in diesen
+  Screenshot zeigt Treppenstufen, die im echten Render nicht existieren. Für
+  Kantenglättungs-Prüfungen den Menüpunkt
+  `RestaurantIdle/Game-View auf Portrait klein (405x720)` benutzen (1:1).
+
+Unity benutzt hier **C# 9** -- kein `record struct`, keine `with`-Ausdrücke.
