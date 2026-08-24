@@ -19,6 +19,13 @@ namespace RestaurantIdle.Editor
 
         public static void BuildWebGl()
         {
+            // Muss vor allem anderen laufen: der [InitializeOnLoadMethod]-Weg in
+            // UrpSetup (delayCall) feuert im -executeMethod-Batch-Build nicht,
+            // siehe EnsureActive-Kommentar dort. Ohne aktive URP-Pipeline
+            // stripped der WebGL-Build alle URP-Shadervarianten weg -- Ergebnis
+            // sind pinke Materialien, ohne dass der Build fehlschlaegt.
+            UrpSetup.EnsureActive();
+
             EnsureMainScene();
 
             var report = BuildPipeline.BuildPlayer(

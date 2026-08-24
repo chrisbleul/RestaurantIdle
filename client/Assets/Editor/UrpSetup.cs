@@ -28,6 +28,20 @@ namespace RestaurantIdle.Editor
             EditorApplication.delayCall += ApplySettings;
         }
 
+        /// <summary>
+        /// Oeffentlicher, synchroner Einstiegspunkt fuer CIBuild.BuildWebGl.
+        /// Der delayCall oben deckt nur die interaktive Editor-Nutzung ab --
+        /// im game-ci/unity-builder-Batch-Build (-executeMethod) lief er nie:
+        /// der WebGL-Build lief durch ohne jede "URP aktiviert"/"URP-
+        /// Bildqualitaet gesetzt"-Logzeile, GraphicsSettings.defaultRenderPipeline
+        /// blieb null, URP-Shadervarianten wurden beim Stripping fuer WebGL
+        /// entfernt, und jedes Material mit "Universal Render Pipeline/Lit"
+        /// kam pink aus dem Build -- ohne dass der Build selbst fehlschlug
+        /// oder irgendwo eine Fehlermeldung stand. CIBuild ruft das hier
+        /// deshalb direkt auf, bevor BuildPipeline.BuildPlayer laeuft.
+        /// </summary>
+        public static void EnsureActive() => ApplySettings();
+
         // Nutzer-Feedback ("alles sehr kantig und die Schatten sind zu
         // extrem"): beide Beschwerden hatten dieselbe Wurzel -- das
         // Pipeline-Asset wurde einmalig mit Unitys Standardwerten angelegt
