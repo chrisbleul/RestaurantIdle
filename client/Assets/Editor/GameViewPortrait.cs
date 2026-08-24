@@ -40,6 +40,19 @@ namespace RestaurantIdle.Editor
         [MenuItem("RestaurantIdle/Game-View auf Portrait (1080x1920)")]
         public static void Apply() => Apply("RestaurantIdle Portrait", 1080, 1920);
 
+        /// <summary>
+        /// Nutzer-Feedback: 1080x1920 (Seitenverhaeltnis 0.5625) ist deutlich
+        /// breiter als reale moderne iPhones -- ein iPhone 16 Pro Max rendert
+        /// WebGL nativ mit 1290x2796 (Seitenverhaeltnis 0.4614). Die
+        /// mitwachsende Kamera (GameManager.RecomputeCameraTarget) rechnet
+        /// den Zoom direkt aus camera.aspect -- bei 0.5625 im Editor
+        /// getestet, sah sie auf dem schmaleren echten Geraet deutlich enger
+        /// aus, als hier je aufgefallen waere. Zielaufloesung deshalb ab
+        /// jetzt das tatsaechliche Geraet, nicht mehr die grobe 9:16-Naeherung.
+        /// </summary>
+        [MenuItem("RestaurantIdle/Game-View auf iPhone 16 Pro Max (1290x2796)")]
+        public static void ApplyIPhone16ProMax() => Apply("RestaurantIdle iPhone 16 Pro Max", 1290, 2796);
+
         private static void Apply(string sizeLabel, int targetWidth, int targetHeight)
         {
             try

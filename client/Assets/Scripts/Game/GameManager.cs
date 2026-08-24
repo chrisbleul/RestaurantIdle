@@ -370,7 +370,7 @@ namespace RestaurantIdle.Game
                 return;
             }
 
-            HandleStationTap();
+            HandlePointerInput();
             UpdateRushHour();
             UpdateGuestSpawner();
             UpdateGuestVisits();
@@ -483,31 +483,137 @@ namespace RestaurantIdle.Game
         /// Maus-Pfad deshalb strikt getrennt statt Input.mousePosition auf
         /// Touch-Geraeten "mitlaufen" zu lassen.
         /// </summary>
-        private void HandleStationTap()
+        /// <summary>Ab wie viel Bewegung (Pixel) aus einem Antippen ein Kamera-Ziehen wird.</summary>
+        private const float DragThresholdPixels = 18f;
+
+        /// <summary>
+        /// Nutzer-Feedback ("Kamera per Ziehen bewegen koennen"): Pan-Grenzen
+        /// entlang RowDirection/DepthDirection, damit man nicht auf leere
+        /// Weltflaeche jenseits des Restaurants ziehen kann. Row grosszuegig
+        /// (halbe volle Stationsreihe + Tresen-Ueberstand), Depth knapper
+        /// (Kueche-Tresen-Gastraum ist nicht sehr tief).
+        /// </summary>
+        private const float PanClampRow = 4.6f;
+        private const float PanClampDepth = 2.6f;
+
+        private bool isPointerDown;
+        private bool isDraggingCamera;
+        private Vector2 pointerDownScreenPos;
+        private Vector2 lastPointerScreenPos;
+
+        /// <summary>Nutzer-gesteuerter Zusatzversatz zur automatischen Kamera-Rahmung (siehe ApplyCameraFraming), in Weltkoordinaten.</summary>
+        private Vector3 cameraPanOffset;
+
+        /// <summary>
+        /// Tap-Layer (PLANv2.md Abschnitt 1.3) plus Kamera-Pan in einem
+        /// gemeinsamen Zustandsautomaten, weil beide dieselbe Press-Geste
+        /// auswerten: kurzes Antippen loest ProduceNow/OpenStationDialog
+        /// aus (unveraendert), Ziehen ueber DragThresholdPixels hinaus
+        /// bewegt stattdessen die Kamera und unterdrueckt den Tap.
+        /// </summary>
+        /// <summary>
+        /// PLANv3.md K3-Nachbarbefund: IsPointerOverGameObject() ohne
+        /// fingerId liefert auf Touch-Geraeten den (nicht vorhandenen)
+        /// Maus-Status -- auf echten Geraeten (iOS) schlagen UI-Taps dann
+        /// zusaetzlich als 3D-Raycast durch die Szene durch. Touch- und
+        /// Maus-Pfad deshalb strikt getrennt statt Input.mousePosition auf
+        /// Touch-Geraeten "mitlaufen" zu lassen.
+        /// </summary>
+        private void HandlePointerInput()
         {
-            bool tapped;
-            bool overUi;
+            bool down, held, up;
             Vector2 screenPosition;
+            bool overUi;
 
             if (Input.touchCount > 0)
             {
                 var touch = Input.GetTouch(0);
-                tapped = touch.phase == TouchPhase.Began;
+                down = touch.phase == TouchPhase.Began;
+                held = touch.phase == TouchPhase.Moved || touch.phase == TouchPhase.Stationary;
+                up = touch.phase == TouchPhase.Ended || touch.phase == TouchPhase.Canceled;
                 screenPosition = touch.position;
                 overUi = EventSystem.current.IsPointerOverGameObject(touch.fingerId);
             }
             else
             {
-                tapped = Input.GetMouseButtonDown(0);
+                down = Input.GetMouseButtonDown(0);
+                held = Input.GetMouseButton(0);
+                up = Input.GetMouseButtonUp(0);
                 screenPosition = Input.mousePosition;
                 overUi = EventSystem.current.IsPointerOverGameObject();
             }
 
-            if (!tapped || overUi || GameAssets.MainCamera == null)
+            if (down)
+            {
+                isPointerDown = !overUi;
+                isDraggingCamera = false;
+                pointerDownScreenPos = screenPosition;
+                lastPointerScreenPos = screenPosition;
+                return;
+            }
+
+            if (!isPointerDown)
             {
                 return;
             }
 
+            if (held)
+            {
+                var screenDelta = screenPosition - lastPointerScreenPos;
+                lastPointerScreenPos = screenPosition;
+
+                if (!isDraggingCamera
+                    && (screenPosition - pointerDownScreenPos).sqrMagnitude > DragThresholdPixels * DragThresholdPixels)
+                {
+                    isDraggingCamera = true;
+                }
+
+                if (isDraggingCamera)
+                {
+                    PanCamera(screenDelta);
+                }
+
+                return;
+            }
+
+            if (up)
+            {
+                if (!isDraggingCamera && GameAssets.MainCamera != null)
+                {
+                    HandleTap(pointerDownScreenPos);
+                }
+
+                isPointerDown = false;
+                isDraggingCamera = false;
+            }
+        }
+
+        /// <summary>Verschiebt cameraPanOffset entlang der Bildschirm-Achsen der Kamera, geklemmt auf PanClampRow/PanClampDepth.</summary>
+        private void PanCamera(Vector2 screenDelta)
+        {
+            var cam = GameAssets.MainCamera;
+            if (cam == null)
+            {
+                return;
+            }
+
+            // Fuer eine orthografische Kamera ist Welteinheiten-pro-Pixel
+            // unabhaengig von Breite/Hoehe identisch (siehe RecomputeCameraTarget-
+            // Kommentar zur Bildhoehen-Rechnung) -- ein Wert reicht fuer beide Achsen.
+            var unitsPerPixel = 2f * cam.orthographicSize / Screen.height;
+
+            // Ziehen nach rechts/oben soll den Bildinhalt in dieselbe Richtung
+            // mitnehmen -- die Kamera selbst bewegt sich dafuer entgegengesetzt.
+            cameraPanOffset -= cam.transform.right * (screenDelta.x * unitsPerPixel);
+            cameraPanOffset -= cam.transform.up * (screenDelta.y * unitsPerPixel);
+
+            var row = Mathf.Clamp(Vector3.Dot(cameraPanOffset, RestaurantLayout.RowDirection), -PanClampRow, PanClampRow);
+            var depth = Mathf.Clamp(Vector3.Dot(cameraPanOffset, RestaurantLayout.DepthDirection), -PanClampDepth, PanClampDepth);
+            cameraPanOffset = (RestaurantLayout.RowDirection * row) + (RestaurantLayout.DepthDirection * depth);
+        }
+
+        private void HandleTap(Vector2 screenPosition)
+        {
             var ray = GameAssets.MainCamera.ScreenPointToRay(screenPosition);
             if (!Physics.Raycast(ray, out var hit) || !hit.collider.TryGetComponent<StationHotspot>(out var hotspot))
             {
@@ -540,11 +646,21 @@ namespace RestaurantIdle.Game
         private const float GuestSpawnMaxInterval = 8f;
 
         // Kenney-Sprite ist 96x128px bei 100 PPU (Unity-Default) = 0.96 x
-        // 1.28 Weltmasse nativ -- deutlich zu gross fuer diese Szene (siehe
-        // FurnitureScale in CIBuild.cs, gleiche Groessenordnung wie dort).
-        // 0.55 ergibt eine Sprite-Hoehe von ~0.7, aehnlich der vorherigen
-        // Kapsel (0.25/0.4/0.25 -> Hoehe 0.8).
-        private const float GuestSpriteScale = 0.55f;
+        // 1.28 Weltmasse nativ.
+        private const float GuestSpriteNativeHeight = 1.28f;
+
+        // Nutzer-Feedback ("Personen im Verhaeltnis der Geraete skalieren"):
+        // vorher ein freistehender fester Wert (0.55), unabhaengig davon,
+        // wie gross die Kuechengeraete tatsaechlich skaliert wurden (CIBuild
+        // misst und skaliert jedes Geraet einzeln auf eine Zielgroesse).
+        // Jetzt ein Anteil von RestaurantLayout.CounterHeight -- derselben
+        // Referenz, auf deren Hoehe die Theke und alle Stationsgeraete
+        // stehen. 0.67 reproduziert die bisher von Hand austarierte
+        // Gast-Sprite-Hoehe (~0.7 Weltmasse) exakt, aendert sich aber jetzt
+        // automatisch mit, falls CounterHeight je angepasst wird.
+        private const float GuestHeightRatio = 0.67f;
+        private static readonly float GuestSpriteScale =
+            (RestaurantLayout.CounterHeight * GuestHeightRatio) / GuestSpriteNativeHeight;
 
         /// <summary>
         /// Eingang, Ausgang, Warteplaetze und Wartepositionen stehen in
@@ -634,7 +750,18 @@ namespace RestaurantIdle.Game
         // selbst war die eigentliche Ursache fuer den grossen leeren
         // Bereich um die Station, nicht die Wand-/Awning-Skalierung, an
         // der zuvor mehrfach nachjustiert wurde.
-        private const float MinOrthographicSize = 2f;
+        //
+        // Nutzer-Feedback ("Zoom viel zu nah trotz iPhone 16 Pro Max"): 2
+        // war selbst gegen die neue Kamera nie auf einem echten, schmalen
+        // Geraet geprueft worden -- nur im Editor bei 1080x1920 (0.5625).
+        // Ein iPhone 16 Pro Max rendert mit 0.4614 spuerbar schmaler; die
+        // Breitenformel (width / (2*aspect)) zieht bei so einem Seiten-
+        // verhaeltnis staerker an als die Untergrenze selbst zulaesst --
+        // im Fruehspiel (nur Station 0 sichtbar) blieb dadurch kaum mehr
+        // als die Station selbst im Bild, kein Platz fuer Warteschlange
+        // oder Umgebung. Referenzbild (Eatventure-artiges Vorbild) zeigt
+        // deutlich mehr Luft um die aktive Station.
+        private const float MinOrthographicSize = 3.2f;
         private const float CameraFramingMarginX = 1.4f;
         private const float CameraFramingMarginY = 1.2f;
 
@@ -1228,7 +1355,11 @@ namespace RestaurantIdle.Game
             var t = Time.deltaTime * CameraFramingLerpSpeed;
             cam.orthographicSize = Mathf.Lerp(cam.orthographicSize, targetOrthoSize, t);
 
-            var lookTarget = targetLookAt;
+            // cameraPanOffset (siehe PanCamera) addiert sich hier auf das
+            // automatische Framing-Ziel drauf, statt es zu ersetzen -- die
+            // Auto-Kamera bleibt aktiv im Hintergrund, der Nutzer schaut nur
+            // vorruebergehend woanders hin.
+            var lookTarget = targetLookAt + cameraPanOffset;
             // Der Versatz fuer die HUD-Leisten steckt bereits in
             // targetLookAt (siehe RecomputeCameraTarget) -- hier bleibt nur
             // die weiche Fahrt.
@@ -1423,24 +1554,55 @@ namespace RestaurantIdle.Game
 
             // Deutlich anderer Farbton als jeder Gast: der Spieler muss auf
             // einen Blick sehen koennen, welche Station bereits automatisch
-            // bedient wird.
-            spriteRenderer.color = new Color(0.55f, 0.75f, 1f);
-            worker.transform.localScale = Vector3.one * (GuestSpriteScale * 0.9f);
+            // bedient wird. Zusaetzlich eine Kochmuetze (siehe AttachChefHat)
+            // -- Nutzer-Feedback: Personal und Gast nutzten bisher exakt
+            // dasselbe Sprite, nur eingefaerbt. Eine zweite echte
+            // Charaktergrafik gibt es im Projekt nicht (nur die vier
+            // Kenney-Toon-Character-Bilder fuer Gaeste), die Muetze schafft
+            // stattdessen eine echte Silhouetten-Unterscheidung ohne neue
+            // Asset-Importe.
+            spriteRenderer.color = new Color(0.45f, 0.65f, 0.95f);
+            worker.transform.localScale = Vector3.one * (GuestSpriteScale * 0.95f);
             if (GameAssets.MainCamera != null)
             {
                 worker.transform.rotation = GameAssets.MainCamera.transform.rotation;
             }
 
-            // Auf der Wandseite der Station -- der Warteplatz davor gehoert
-            // dem Gast (RestaurantLayout.GuestStandPosition).
+            AttachChefHat(worker.transform);
+
+            // Auf der Kuechenseite der Station (Richtung Rueckwand) -- der
+            // Warteplatz jenseits des Tresens gehoert dem Gast
+            // (RestaurantLayout.GuestStandPosition).
             var staffSpot = stationPosition
-                - RestaurantLayout.GuestSide * 0.55f
+                - RestaurantLayout.DepthDirection * 0.55f
                 + new Vector3(0f, RestaurantLayout.GuestGroundY, 0f);
 
             GroundShadow.Attach(worker.transform, 0.36f, 0.28f);
 
             var staff = worker.AddComponent<StaffWorker>();
             staff.Init(staffSpot, state.Stations[i].CycleSeconds(StationCatalog.All[i]));
+        }
+
+        /// <summary>
+        /// Prozedural erzeugte Kochmuetze ueber dem Kopf des Personal-Sprites
+        /// -- echte Silhouetten-Unterscheidung zum Gast statt nur Einfaerbung
+        /// (siehe SpawnStaffWorker-Kommentar). Als eigenes Kind-GameObject,
+        /// nicht ins Guest-Sprite reingemalt: so bleibt das Basissprite
+        /// unveraendert wiederverwendbar und die Muetze folgt der Billboard-
+        /// Rotation automatisch mit.
+        /// </summary>
+        private static void AttachChefHat(Transform parent)
+        {
+            var hatGo = new GameObject("ChefHat", typeof(SpriteRenderer));
+            hatGo.transform.SetParent(parent, worldPositionStays: false);
+            hatGo.transform.localPosition = new Vector3(0f, 0.62f, 0f);
+            hatGo.transform.localRotation = Quaternion.identity;
+            hatGo.transform.localScale = Vector3.one * 0.5f;
+
+            var renderer = hatGo.GetComponent<SpriteRenderer>();
+            renderer.sprite = GameAssets.ChefHatSprite;
+            renderer.color = Color.white;
+            renderer.sortingOrder = 1;
         }
 
         /// <summary>
@@ -2004,7 +2166,7 @@ namespace RestaurantIdle.Game
         /// nicht mehr haben will. Das soll alles ueber Dialogmenues
         /// geschehen, also durch Klicken"): ersetzt die vorherige
         /// dauerhafte Kaufen/Ausstattung/Manager-Zeile pro Station in der
-        /// Liste. Ausgeloest durch HandleStationTap, wenn an der
+        /// Liste. Ausgeloest durch HandleTap, wenn an der
         /// angetippten Station kein Gast wartet (wartet einer, bedient der
         /// Tap ihn stattdessen, siehe K2). Kauf-Buttons bauen den Dialog
         /// bewusst komplett neu auf (Destroy + erneuter Aufruf) statt die
@@ -2261,7 +2423,7 @@ namespace RestaurantIdle.Game
         /// Zwei globale Aktionen am unteren Rand -- bewusst NUR globale.
         /// Alles, was eine einzelne Station betrifft, laeuft ausschliesslich
         /// ueber das Antippen der Station und den daraufhin geoeffneten
-        /// Dialog (Nutzer-Feedback, siehe HandleStationTap/OpenStationDialog).
+        /// Dialog (Nutzer-Feedback, siehe HandleTap/OpenStationDialog).
         /// </summary>
         private void BuildBottomBar()
         {

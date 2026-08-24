@@ -165,6 +165,79 @@ namespace RestaurantIdle.Game
             }
         }
 
+        private static Sprite chefHatSprite;
+
+        /// <summary>
+        /// Prozedural erzeugte Kochmuetze -- echte Silhouetten-
+        /// Unterscheidung zwischen Personal und Gast (siehe
+        /// GameManager.AttachChefHat), ohne ein zweites Kenney-Charakterset
+        /// zu brauchen (im Projekt liegen nur die vier Gast-Sprites). Band
+        /// + Puff als zwei Kreisformen uebereinander, gleiches
+        /// Alpha-Verlauf-Verfahren wie BlobShadowSprite.
+        /// </summary>
+        public static Sprite ChefHatSprite
+        {
+            get
+            {
+                if (chefHatSprite != null)
+                {
+                    return chefHatSprite;
+                }
+
+                const int width = 48;
+                const int height = 56;
+                var texture = new Texture2D(width, height, TextureFormat.RGBA32, false)
+                {
+                    name = "ChefHat",
+                    wrapMode = TextureWrapMode.Clamp,
+                    filterMode = FilterMode.Bilinear,
+                };
+
+                var pixels = new Color32[width * height];
+                var white = new Color32(250, 250, 248, 255);
+                var outline = new Color32(60, 60, 60, 255);
+
+                // Band unten (breiter, flacher Ellipsen-Ausschnitt) + Puff
+                // oben (hoehere Ellipse) -- zwei ueberlappende Ellipsen
+                // ergeben die typische Kochmuetzen-Silhouette, ohne Text/
+                // Bezier-Kurven nachbauen zu muessen.
+                var bandCenter = new Vector2(width * 0.5f, height * 0.28f);
+                var bandRadius = new Vector2(width * 0.46f, height * 0.24f);
+                var puffCenter = new Vector2(width * 0.5f, height * 0.62f);
+                var puffRadius = new Vector2(width * 0.4f, height * 0.42f);
+
+                for (var y = 0; y < height; y++)
+                {
+                    for (var x = 0; x < width; x++)
+                    {
+                        var point = new Vector2(x + 0.5f, y + 0.5f);
+                        var inBand = EllipseDistance(point, bandCenter, bandRadius) <= 1f;
+                        var inPuff = EllipseDistance(point, puffCenter, puffRadius) <= 1f;
+
+                        if (!inBand && !inPuff)
+                        {
+                            pixels[(y * width) + x] = default;
+                            continue;
+                        }
+
+                        var edgeBand = EllipseDistance(point, bandCenter, bandRadius);
+                        var edgePuff = EllipseDistance(point, puffCenter, puffRadius);
+                        var nearEdge = (inBand && edgeBand > 0.88f) || (inPuff && edgePuff > 0.9f);
+                        pixels[(y * width) + x] = nearEdge ? outline : white;
+                    }
+                }
+
+                texture.SetPixels32(pixels);
+                texture.Apply();
+
+                chefHatSprite = Sprite.Create(texture, new Rect(0f, 0f, width, height), new Vector2(0.5f, 0.15f), 100f);
+                return chefHatSprite;
+            }
+        }
+
+        private static float EllipseDistance(Vector2 point, Vector2 center, Vector2 radius) =>
+            Mathf.Sqrt(Mathf.Pow((point.x - center.x) / radius.x, 2f) + Mathf.Pow((point.y - center.y) / radius.y, 2f));
+
         /// <summary>Gemeinsames Material fuer alle Partikeleffekte -- als sharedMaterial zuweisen, nie veraendern.</summary>
         public static Material ParticleMaterial
         {
@@ -197,6 +270,7 @@ namespace RestaurantIdle.Game
             sfxSource = null;
             uiFont = null;
             blobShadowSprite = null;
+            chefHatSprite = null;
             particleMaterial = null;
             mainCamera = null;
         }

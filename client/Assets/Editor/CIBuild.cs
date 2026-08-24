@@ -17,6 +17,14 @@ namespace RestaurantIdle.Editor
     {
         private const string ScenePath = "Assets/Scenes/Main.unity";
 
+        /// <summary>
+        /// Manueller Aufruf desselben Builds, den auch CI nutzt (ci.yml:
+        /// buildMethod RestaurantIdle.Editor.CIBuild.BuildWebGl) -- fuer
+        /// lokale Validierung ohne Deploy: Editor-Play-Mode strippt nie
+        /// Shader, ein echter Build kann sich davon unterscheiden (siehe
+        /// UrpSetup.EnsureActive-Kommentar zum Pink-Bug).
+        /// </summary>
+        [MenuItem("RestaurantIdle/Lokalen WebGL-Build erzeugen")]
         public static void BuildWebGl()
         {
             // Muss vor allem anderen laufen: der [InitializeOnLoadMethod]-Weg in
@@ -97,9 +105,9 @@ namespace RestaurantIdle.Editor
             camera.clearFlags = CameraClearFlags.SolidColor;
             camera.backgroundColor = new Color(0.62f, 0.82f, 0.92f);
             cameraObject.transform.rotation = Quaternion.Euler(55f, 45f, 0f);
-            // Zielpunkt ungefaehr in der Mitte der Location-1-Objekte, nicht
-            // Weltursprung -- die Theke selbst hat ihren Pivot in einer Ecke.
-            var lookTarget = RestaurantLayout.StationPosition(1) + new Vector3(0f, 0.4f, 0f);
+            // Zielpunkt ungefaehr in der Mitte der Stationsreihe -- Station 0
+            // liegt per RowOffset am linken Rand, nicht in der Mitte.
+            var lookTarget = RestaurantLayout.StationPosition(0) + new Vector3(0f, 0.4f, 0f);
             cameraObject.transform.position = lookTarget + cameraObject.transform.rotation * new Vector3(0, 0, -15f);
 
             // Nutzer-Feedback ("die Schatten sind zu extrem"): drei
@@ -191,17 +199,25 @@ namespace RestaurantIdle.Editor
             Width,
         }
 
-        /// <summary>Abstand der Rueckwand von der Thekenlinie, Richtung Wandseite (im Bild rechts).</summary>
-        private const float WallOffset = 1.15f;
+        /// <summary>Abstand kleiner Wanddeko (Haengeschrank, Muelleimer) von der Stationsreihe, Richtung Kamera.</summary>
+        private const float WallDepthOffset = 1.15f;
 
-        private const float CounterHeight = 1.05f;
+        /// <summary>
+        /// Abstand der Rueckwand von der Stationsreihe, jenseits des
+        /// gesamten Gastraums (nicht auf der Kamera-Seite): eine Wand
+        /// zwischen Kamera und Kuechengeraeten -- der erste Versuch --
+        /// verdeckt bei diesem Kamerawinkel (55 Grad) die kuerzeren Geraete
+        /// dahinter komplett. Als reiner Hintergrund hinter allem statt als
+        /// Kulisse direkt hinter dem Personal gibt es dieses Problem nicht.
+        /// </summary>
+        private const float WallFarDepthOffset = 4.4f;
+
         private const float WallHeight = 2.4f;
-
-        private static Vector3 WallSide => -RestaurantLayout.GuestSide;
 
         private static void BuildLocation1Placeholder()
         {
             BuildGround();
+            BuildCounter();
             BuildStations();
             BuildBackWall();
             BuildGuestArea();
@@ -209,12 +225,16 @@ namespace RestaurantIdle.Editor
 
         private static void BuildGround()
         {
+            // Station 3 (die mittlere von 7) liegt per RowOffset exakt im
+            // Reihen-Ursprung -- dieselbe Mitte fuer Rasen/Innenboden wie
+            // zuvor, nur jetzt tatsaechlich die geometrische Mitte der
+            // gesamten Reihe statt nur der ersten Station.
             var center = RestaurantLayout.StationPosition(3);
 
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
             ground.transform.position = new Vector3(center.x, 0f, center.z);
-            ground.transform.localScale = new Vector3(2f, 1f, 2f);
+            ground.transform.localScale = new Vector3(2.2f, 1f, 2.2f);
             ground.GetComponent<MeshRenderer>().sharedMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
             {
                 color = new Color(0.55f, 0.75f, 0.45f),
@@ -222,16 +242,23 @@ namespace RestaurantIdle.Editor
 
             // Innenboden als eigene Flaeche knapp ueber dem Rasen: ohne ihn
             // stehen Theke und Geraete direkt auf der Wiese -- das liest
-            // sich als Picknick, nicht als Lokal.
+            // sich als Picknick, nicht als Lokal. Deckt jetzt Kueche UND
+            // Gastraum ab (Eatventure-Layout: beide Zonen sind ein
+            // durchgehender Innenraum, nicht mehr Theke + separater
+            // Aussenbereich).
             var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
             floor.name = "InteriorFloor";
+            // Deckt von der Kuechenseite (kleine negative Tiefe, Deko wie
+            // Haengeschrank/Muelleimer) bis kurz vor die Hintergrundwand
+            // (WallFarDepthOffset) ab -- sonst zeigt der Streifen zwischen
+            // Gastraum-Ende und Wand Rasen statt Innenboden.
             floor.transform.position = new Vector3(center.x, 0.012f, center.z)
-                + RestaurantLayout.GuestSide * 1.6f
-                - RestaurantLayout.CounterDirection * 1.6f;
-            floor.transform.rotation = RestaurantLayout.CounterRotation;
+                + RestaurantLayout.DepthDirection * (WallFarDepthOffset * 0.5f);
+            floor.transform.rotation = RestaurantLayout.RowRotation;
             // Plane ist nativ 10x10 Einheiten: lokale X-Achse laeuft nach
-            // dem Drehen entlang der Theke, lokale Z-Achse quer dazu.
-            floor.transform.localScale = new Vector3(1.55f, 1f, 0.95f);
+            // dem Drehen entlang der Stationsreihe (RowDirection), lokale
+            // Z-Achse entlang der Tiefe (DepthDirection).
+            floor.transform.localScale = new Vector3(1.1f, 1f, (WallFarDepthOffset + 1f) / 10f);
             floor.GetComponent<MeshRenderer>().sharedMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
             {
                 color = new Color(0.82f, 0.71f, 0.56f),
@@ -244,29 +271,62 @@ namespace RestaurantIdle.Editor
             Object.DestroyImmediate(ground.GetComponent<MeshCollider>());
         }
 
+        /// <summary>
+        /// EIN durchgehender Tresen ueber die ganze Stationsreihe (Nutzer-
+        /// Feedback, Eatventure-Vorbild) -- vorher stand nur unter Station 0
+        /// ein einzelnes Thekenstueck, der Rest der Reihe hatte gar keinen
+        /// Tresen. Segmentbreite wird gemessen wie bei der Rueckwand.
+        /// </summary>
+        private static void BuildCounter()
+        {
+            var segmentWidth = MeasureScaledWidth("Assets/Models/Furniture/kitchenBar.fbx", RestaurantLayout.CounterHeight);
+            if (segmentWidth <= 0.01f)
+            {
+                Debug.LogWarning("Thekenbreite nicht messbar -- Tresen uebersprungen.");
+                return;
+            }
+
+            // Ueberstand von einer halben Stationsbreite an jedem Ende --
+            // der Tresen soll sichtbar ueber die aeusseren Stationen
+            // hinausragen, nicht buendig mit ihrer Mitte abschliessen.
+            var length = RestaurantLayout.StationSpacing * RestaurantLayout.StationCount + RestaurantLayout.StationSpacing;
+            var count = Mathf.CeilToInt(length / segmentWidth);
+            var start = RestaurantLayout.StationPosition(0) - RestaurantLayout.RowDirection * (length * 0.5f);
+
+            for (var i = 0; i < count; i++)
+            {
+                InstantiateModel("Assets/Models/Furniture/kitchenBar.fbx", $"Tresen_{i}",
+                    start + RestaurantLayout.RowDirection * (i * segmentWidth),
+                    RestaurantLayout.RowRotation, RestaurantLayout.CounterHeight);
+            }
+
+            InstantiateModel("Assets/Models/Furniture/kitchenBarEnd.fbx", "Tresen_Abschluss_Links",
+                start - RestaurantLayout.RowDirection * 0.05f, RestaurantLayout.RowRotation, RestaurantLayout.CounterHeight);
+            InstantiateModel("Assets/Models/Furniture/kitchenBarEnd.fbx", "Tresen_Abschluss_Rechts",
+                start + RestaurantLayout.RowDirection * (count * segmentWidth + 0.05f),
+                RestaurantLayout.RowRotation * Quaternion.Euler(0f, 180f, 0f), RestaurantLayout.CounterHeight);
+
+            Debug.Log($"Tresen: {count} Segmente a {segmentWidth:F2} Einheiten.");
+        }
+
         private static void BuildStations()
         {
-            var rotation = RestaurantLayout.CounterRotation;
+            var rotation = RestaurantLayout.RowRotation;
 
-            // Theke unter der ersten Station. Pivot liegt an einer Ecke,
-            // nicht in der Mitte (Kenney-Konvention fuers Aneinanderreihen
-            // von Modulen).
-            var counterBase = RestaurantLayout.StationPosition(0)
-                - RestaurantLayout.CounterDirection * 0.55f
-                - RestaurantLayout.GuestSide * 0.28f;
-            InstantiateModel("Assets/Models/Furniture/kitchenBar.fbx", "Station_Kaffeemaschine_Theke",
-                counterBase, rotation, CounterHeight);
-            InstantiateModel("Assets/Models/Furniture/kitchenBarEnd.fbx", "Theke_Abschluss",
-                counterBase - RestaurantLayout.CounterDirection * 1.1f, rotation, CounterHeight);
+            // Tatsaechliche Theken-Oberkante messen statt CounterHeight
+            // anzunehmen -- siehe MeasureScaledTopY-Kommentar.
+            var counterTopY = MeasureScaledTopY("Assets/Models/Furniture/kitchenBar.fbx", RestaurantLayout.CounterHeight);
 
             InstantiateModel("Assets/Models/Furniture/kitchenCoffeeMachine.fbx", "Station_Kaffeemaschine",
-                RestaurantLayout.StationPosition(0) + new Vector3(0f, CounterHeight, 0f),
+                RestaurantLayout.StationPosition(0) + new Vector3(0f, counterTopY, 0f),
                 rotation, 0.45f, FitAxis.Height, stationIndex: 0);
 
             // Nicht auf den Warteplatz selbst: dort steht der bediente
-            // Gast, Hocker und Sprite lagen im Testlauf uebereinander.
-            var stoolSpot = RestaurantLayout.GuestStandPosition(RestaurantLayout.StationPosition(0))
-                + RestaurantLayout.CounterDirection * 0.6f;
+            // Gast, Hocker und Sprite lagen im Testlauf uebereinander. Der
+            // Hocker steht jetzt auf der Kuechenseite (Personal), nicht mehr
+            // auf der Gastseite -- im Eatventure-Layout sitzt/steht das
+            // Personal an der Theke, die Gaeste stehen jenseits davon.
+            var stoolSpot = RestaurantLayout.StationPosition(0) - RestaurantLayout.DepthDirection * 0.6f;
             InstantiateModel("Assets/Models/Furniture/stoolBar.fbx", "Hocker",
                 new Vector3(stoolSpot.x, 0f, stoolSpot.z), rotation, 0.7f);
 
@@ -286,17 +346,19 @@ namespace RestaurantIdle.Editor
             for (var i = 0; i < remainingStations.Length; i++)
             {
                 var (model, stationName, height) = remainingStations[i];
-                var position = RestaurantLayout.StationPosition(i + 1);
+                var position = RestaurantLayout.StationPosition(i + 1) + new Vector3(0f, counterTopY, 0f);
                 InstantiateModel($"Assets/Models/Furniture/{model}", $"Station_{stationName}",
                     position, rotation, height, FitAxis.Height, stationIndex: i + 1);
 
-                // Haengeschrank an der Wand hinter jeder zweiten Station --
-                // fuellt die sonst voellig leere Wandflaeche, ohne den Blick
-                // auf die Station selbst zu nehmen.
+                // Haengeschrank an der Rueckwand hinter jeder zweiten
+                // Station -- fuellt die sonst voellig leere Wandflaeche,
+                // ohne den Blick auf die Station selbst zu nehmen.
                 if (i % 2 == 0)
                 {
                     InstantiateModel("Assets/Models/Furniture/kitchenCabinetUpper.fbx", $"Haengeschrank_{i}",
-                        position + WallSide * (WallOffset - 0.3f) + new Vector3(0f, 1.5f, 0f),
+                        RestaurantLayout.StationPosition(i + 1)
+                            - RestaurantLayout.DepthDirection * (WallDepthOffset - 0.3f)
+                            + new Vector3(0f, 1.5f, 0f),
                         rotation, 0.6f);
                 }
             }
@@ -306,10 +368,13 @@ namespace RestaurantIdle.Editor
         }
 
         /// <summary>
-        /// Rueckwand parallel zur Theke. Segmentbreite wird am bereits auf
-        /// Zielhoehe skalierten Modell gemessen -- Raten war beim
-        /// vorherigen Wandversuch die Fehlerquelle (die Wand war am Ende
-        /// 0.156 Einheiten hoch und damit unsichtbar).
+        /// Hintergrund-Wand jenseits des gesamten Gastraums, parallel zur
+        /// Stationsreihe (RowDirection). Nicht direkt hinter der Kueche --
+        /// siehe WallFarDepthOffset-Kommentar, eine hohe Wand naeher an der
+        /// Kamera als die Geraete wuerde sie verdecken. Segmentbreite wird
+        /// am bereits auf Zielhoehe skalierten Modell gemessen -- Raten war
+        /// beim vorherigen Wandversuch die Fehlerquelle (die Wand war am
+        /// Ende 0.156 Einheiten hoch und damit unsichtbar).
         /// </summary>
         private static void BuildBackWall()
         {
@@ -320,70 +385,72 @@ namespace RestaurantIdle.Editor
                 return;
             }
 
-            var length = RestaurantLayout.StationSpacing * 9f;
+            var length = RestaurantLayout.StationSpacing * RestaurantLayout.StationCount + RestaurantLayout.StationSpacing;
             var count = Mathf.CeilToInt(length / segmentWidth);
             var start = RestaurantLayout.StationPosition(0)
-                + WallSide * WallOffset
-                - RestaurantLayout.CounterDirection * 2.4f;
+                - RestaurantLayout.RowDirection * (length * 0.5f)
+                + RestaurantLayout.DepthDirection * WallFarDepthOffset;
 
             for (var i = 0; i < count; i++)
             {
                 // Jedes zweite Segment mit Fenster: eine geschlossene Wand
                 // ueber die volle Laenge wirkt wie eine Mauer, Fenster
-                // machen daraus einen Gastraum.
+                // machen daraus eine Kueche mit Tageslicht.
                 var model = i % 2 == 1 ? "wallWindow" : "wall";
                 InstantiateModel($"Assets/Models/Furniture/{model}.fbx", $"Wall_{i}",
-                    start + RestaurantLayout.CounterDirection * (i * segmentWidth),
-                    RestaurantLayout.CounterRotation, WallHeight);
+                    start + RestaurantLayout.RowDirection * (i * segmentWidth),
+                    RestaurantLayout.RowRotation, WallHeight);
             }
 
             Debug.Log($"Rueckwand: {count} Segmente a {segmentWidth:F2} Einheiten.");
         }
 
         /// <summary>
-        /// Gastbereich links der Theke -- genau der Streifen, durch den die
-        /// Gaeste laufen und in dem sie anstehen (RestaurantLayout.Entrance
-        /// und QueueSlot). Der Bereich war vorher leerer Rasen und hat rund
-        /// die Haelfte des Bildes gefuellt, ohne etwas zu zeigen.
+        /// Gastraum jenseits des Tresens (positive DepthDirection) -- der
+        /// Streifen, durch den die Gaeste laufen und in dem sie anstehen
+        /// (RestaurantLayout.Entrance und QueueSlot). Vorher lag dieser
+        /// Bereich seitlich der Theke, jetzt dahinter -- Eatventure-Layout.
         /// </summary>
         private static void BuildGuestArea()
         {
-            var rotation = RestaurantLayout.CounterRotation;
+            var rotation = RestaurantLayout.RowRotation;
             var entrance = new Vector3(RestaurantLayout.Entrance.x, 0f, RestaurantLayout.Entrance.z);
 
             InstantiateModel("Assets/Models/Furniture/rugRectangle.fbx", "Eingangsteppich",
                 entrance + new Vector3(0f, 0.02f, 0f), rotation, 1.5f, FitAxis.Width);
 
-            // Sitzgruppen weiter links, ausserhalb der Laufwege: die
-            // Warteschlange muss lesbar bleiben.
+            // Sitzgruppen im Gastraum, weiter von der Theke entfernt als der
+            // direkte Warteplatz -- ausserhalb der Laufwege der Schlange.
             for (var i = 0; i < 3; i++)
             {
-                var anchor = RestaurantLayout.StationPosition(i * 2)
-                    + RestaurantLayout.GuestSide * 1.95f
-                    - RestaurantLayout.CounterDirection * 0.5f;
+                var anchor = RestaurantLayout.StationPosition(i * 2 - 1)
+                    + RestaurantLayout.DepthDirection * 2.2f;
 
                 InstantiateModel("Assets/Models/Furniture/tableCloth.fbx", $"Gasttisch_{i}",
                     anchor, rotation, 0.75f);
                 InstantiateModel("Assets/Models/Furniture/chair.fbx", $"Gaststuhl_{i}a",
-                    anchor - RestaurantLayout.CounterDirection * 0.6f, rotation, 0.85f);
+                    anchor - RestaurantLayout.RowDirection * 0.6f, rotation, 0.85f);
                 InstantiateModel("Assets/Models/Furniture/chairCushion.fbx", $"Gaststuhl_{i}b",
-                    anchor + RestaurantLayout.CounterDirection * 0.6f,
+                    anchor + RestaurantLayout.RowDirection * 0.6f,
                     rotation * Quaternion.Euler(0f, 180f, 0f), 0.85f);
             }
 
             InstantiateModel("Assets/Models/Furniture/pottedPlant.fbx", "Pflanze_Eingang",
-                entrance + RestaurantLayout.GuestSide * 1.3f, rotation, 0.9f);
+                entrance + RestaurantLayout.DepthDirection * 1.3f, rotation, 0.9f);
             InstantiateModel("Assets/Models/Furniture/pottedPlant.fbx", "Pflanze_Ende",
-                RestaurantLayout.StationPosition(6) + RestaurantLayout.GuestSide * 1.5f, rotation, 0.9f);
+                RestaurantLayout.StationPosition(0) - RestaurantLayout.RowDirection * 1.5f
+                    + RestaurantLayout.DepthDirection * 1.6f,
+                rotation, 0.9f);
             InstantiateModel("Assets/Models/Furniture/plantSmall2.fbx", "Pflanze_Theke",
                 RestaurantLayout.StationPosition(0)
-                    - RestaurantLayout.CounterDirection * 0.8f
-                    + new Vector3(0f, CounterHeight, 0f),
+                    - RestaurantLayout.RowDirection * 0.8f
+                    + new Vector3(0f, RestaurantLayout.CounterHeight, 0f),
                 rotation, 0.25f);
             InstantiateModel("Assets/Models/Furniture/lampSquareFloor.fbx", "Stehlampe",
-                RestaurantLayout.StationPosition(4) + RestaurantLayout.GuestSide * 3.2f, rotation, 1.5f);
+                RestaurantLayout.StationPosition(4) + RestaurantLayout.DepthDirection * 2.6f, rotation, 1.5f);
             InstantiateModel("Assets/Models/Furniture/trashcan.fbx", "Muelleimer",
-                RestaurantLayout.StationPosition(0) + WallSide * 0.9f - RestaurantLayout.CounterDirection * 1.8f,
+                RestaurantLayout.StationPosition(0) - RestaurantLayout.DepthDirection * (WallDepthOffset - 0.3f)
+                    - RestaurantLayout.RowDirection * 1.2f,
                 rotation, 0.55f);
         }
 
@@ -453,6 +520,42 @@ namespace RestaurantIdle.Editor
             }
 
             return Mathf.Max(size.x, size.z) * (targetHeight / size.y);
+        }
+
+        /// <summary>
+        /// Hoehe der Modell-OBERKANTE ueber dem Pivot, wenn das Modell auf
+        /// targetHeight skaliert ist -- nicht dasselbe wie targetHeight
+        /// selbst. Nutzer-Feedback ("Geraete stehen komisch"): die Theke
+        /// wurde bei Y=0 platziert und Geraete pauschal bei Y=CounterHeight
+        /// obendrauf gesetzt, in der Annahme, der Thekenpivot liege an der
+        /// Basis und ihre Oberkante folglich exakt bei CounterHeight. Die
+        /// Kenney-Module haben ihren Pivot aber an einer ECKE, nicht
+        /// zwingend an der niedrigsten Stelle (siehe Klassen-Remarks) --
+        /// Geraete schwebten sichtbar ueber der tatsaechlichen Thekenkante.
+        /// </summary>
+        private static float MeasureScaledTopY(string assetPath, float targetHeight)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+            if (prefab == null)
+            {
+                return targetHeight;
+            }
+
+            var probe = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            probe.transform.position = Vector3.zero;
+            probe.transform.rotation = Quaternion.identity;
+            probe.transform.localScale = Vector3.one;
+
+            var bounds = MeasureBounds(probe);
+            Object.DestroyImmediate(probe);
+
+            if (bounds.size.y <= 0.0001f)
+            {
+                return targetHeight;
+            }
+
+            var scale = targetHeight / bounds.size.y;
+            return bounds.max.y * scale;
         }
 
         private static Bounds MeasureBounds(GameObject instance)

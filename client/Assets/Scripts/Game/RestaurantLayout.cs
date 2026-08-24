@@ -5,40 +5,60 @@ namespace RestaurantIdle.Game
     /// <summary>
     /// Grundriss des Lokals -- gemeinsame Quelle fuer den Szenenaufbau im
     /// Editor (CIBuild) und die laufende Gast-Simulation (GameManager).
-    /// Vorher standen dieselben Positionen doppelt: die Stationen entlang der
-    /// Welt-X-Achse in CIBuild, Eingang/Ausgang/Warteplaetze als separate
-    /// Konstanten im GameManager. Jede Layout-Aenderung musste an beiden
-    /// Stellen von Hand nachgezogen werden.
     ///
-    /// Wichtiger noch ist die Richtung: die Kamera steht isometrisch
-    /// (Euler 55/45/0). Welt-+X zeigt auf dem Bildschirm nach rechts OBEN,
-    /// Welt-+Z nach links oben. Eine Reihe entlang X laeuft im Bild also
-    /// diagonal -- auf einem Portrait-Bildschirm (1080x1920) bestimmt sie
-    /// damit die Bildbreite und laesst oben wie unten grosse leere Flaechen.
-    /// Genau das war im ersten Portrait-Screenshot zu sehen.
+    /// Eatventure-Layout (Nutzer-Feedback): EIN durchgehender Tresen trennt
+    /// einen Kuechenstreifen (Personal/Stationen, nah an der Kamera) von
+    /// einem Gastraum (Gaeste, weiter weg dahinter) -- vorher hatte jede
+    /// Station ihren eigenen kleinen Warteplatz direkt daneben, ohne
+    /// gemeinsamen Tresen.
     ///
-    /// Die Diagonale (1,0,1) steht dagegen senkrecht auf der Bildschirm-
-    /// Horizontalen: sie laeuft im Bild exakt nach oben. Eine Theke entlang
-    /// dieser Achse fuellt die hohe Bildmitte, statt die schmale Breite zu
-    /// sprengen.
+    /// Die Kamera steht isometrisch (Euler 55/45/0): DepthDirection (1,0,1)
+    /// laeuft im Bild nach oben (weiter von der Kamera weg = weiter oben im
+    /// Bild), RowDirection (-1,0,1) laeuft im Bild nach links/rechts -- beide
+    /// stehen im Bild senkrecht aufeinander (siehe RecomputeCameraTarget in
+    /// GameManager, das genau diese Kamera-Ebene nutzt). Die Stationsreihe
+    /// liegt jetzt auf RowDirection (Bildbreite): das alte Layout legte sie
+    /// auf DepthDirection, damit sie die schmale Portrait-Breite nicht
+    /// sprengt -- mit Pan-Steuerung (Nutzer-Feedback) muss die Reihe nicht
+    /// mehr komplett ins Bild passen, der Spieler kann seitlich nachschauen.
     /// </summary>
     public static class RestaurantLayout
     {
         private const float Diagonal = 0.70710678f;
 
-        /// <summary>Verlauf der Thekenreihe -- im Bild senkrecht nach oben.</summary>
-        public static readonly Vector3 CounterDirection = new Vector3(Diagonal, 0f, Diagonal);
+        /// <summary>
+        /// Von der Kueche zum Gastraum -- im Bild nach oben (weiter von der
+        /// Kamera weg). Vorzeichen zweimal empirisch korrigiert: die erste
+        /// Fassung zeigte Gaeste nah/unten und Kueche fern/oben (falsch
+        /// herum), die zweite (testweise geflippte) Fassung drehte es zu
+        /// weit -- Kueche nah/unten UND Wand nah durch den Tresen blockiert.
+        /// Diese Version haelt Kueche bei Tiefe 0 als Referenz und schiebt
+        /// nur Gastraum/Wand ins Bild nach oben (positive Richtung).
+        /// </summary>
+        public static readonly Vector3 DepthDirection = new Vector3(Diagonal, 0f, Diagonal);
 
-        /// <summary>Vom Tresen weg in den Gastraum -- im Bild nach links.</summary>
-        public static readonly Vector3 GuestSide = new Vector3(-Diagonal, 0f, Diagonal);
+        /// <summary>Reihen-Achse: Stationen und Gaeste-Warteplaetze liegen hier nebeneinander -- im Bild nach links/rechts.</summary>
+        public static readonly Vector3 RowDirection = new Vector3(-Diagonal, 0f, Diagonal);
 
-        /// <summary>Rotation, die die lokale +X-Achse eines Modells auf CounterDirection dreht.</summary>
-        public static readonly Quaternion CounterRotation = Quaternion.Euler(0f, -45f, 0f);
+        /// <summary>
+        /// Rotation, die die lokale +X-Achse eines Modells auf RowDirection
+        /// dreht (Stationsreihe, Tresen, Rueckwand). RowDirection steht 90
+        /// Grad zur alten CounterDirection -- der Wert war beim Umbau
+        /// zunaechst nur umbenannt, nicht neu berechnet worden: Modelle
+        /// standen dadurch quer statt in der Reihe zu liegen.
+        /// </summary>
+        public static readonly Quaternion RowRotation = Quaternion.Euler(0f, -135f, 0f);
 
         public const float StationSpacing = 1.15f;
 
-        /// <summary>Abstand des Warteplatzes vom Stationsmittelpunkt.</summary>
-        public const float GuestStandDistance = 0.95f;
+        /// <summary>Zielhoehe der Thekenmodelle -- gemeinsame Referenz fuer den Szenenaufbau (CIBuild) und die Charaktergroesse (GameManager), damit Personen nicht unabhaengig von den Geraeten skaliert werden.</summary>
+        public const float CounterHeight = 1.05f;
+
+        /// <summary>Abstand Kueche -> Tresen entlang DepthDirection.</summary>
+        public const float CounterGap = 0.85f;
+
+        /// <summary>Abstand des Gast-Warteplatzes hinter dem Tresen.</summary>
+        public const float GuestStandDistance = 0.6f;
 
         /// <summary>Fusshoehe der Gast-Sprites (halbe Sprite-Hoehe ueber dem Boden).</summary>
         public const float GuestGroundY = 0.4f;
@@ -46,29 +66,44 @@ namespace RestaurantIdle.Game
         public const int QueueCapacity = 4;
         private const float QueueSlotDistance = 0.65f;
 
-        public static Vector3 StationPosition(int index) => CounterDirection * (index * StationSpacing);
+        /// <summary>Anzahl Stationen -- fuer die zentrierte Reihe (RowOffset), muss zu StationCatalog.All.Length passen.</summary>
+        public const int StationCount = 7;
 
+        /// <summary>Reihen-Position relativ zur Mitte, statt von Index 0 aus wachsend -- die Reihe bleibt beim Rauszoomen mittig statt einseitig zu wandern.</summary>
+        private static float RowOffset(int index) => (index - (StationCount - 1) / 2f) * StationSpacing;
+
+        public static Vector3 StationPosition(int index) => RowDirection * RowOffset(index);
+
+        /// <summary>Gast-Warteplatz direkt hinter dem Tresen, quer zur zugehoerigen Station.</summary>
+        public static Vector3 GuestStandPosition(int stationIndex) => GuestStandPosition(StationPosition(stationIndex));
+
+        /// <summary>Ueberladen fuer Aufrufer, die schon eine Weltposition der Station haben.</summary>
         public static Vector3 GuestStandPosition(Vector3 stationPosition) =>
-            OnGround(stationPosition + GuestSide * GuestStandDistance);
+            OnGround(stationPosition + DepthDirection * (CounterGap + GuestStandDistance));
 
         /// <summary>
-        /// Die Warteschlange beginnt direkt am Warteplatz der ersten Station
-        /// und laeuft von dort nach unten aus dem Bild -- nicht seitlich:
-        /// im Portrait-Format ist der sichtbare Streifen nur rund drei
-        /// Welteinheiten BREIT (orthographicSize * 2 * 0.5625), aber ein
-        /// Vielfaches davon hoch. Alles, was zur Seite ausweicht, liegt
-        /// sofort ausserhalb des Bildes.
+        /// Gemeinsame Warteschlange seitlich neben der Stationsreihe, auf
+        /// Gastraum-Tiefe -- ein Tresen, eine Schlange, statt einer eigenen
+        /// pro Station. Gaeste stehen sichtbar am Tresen an, jenseits von
+        /// Station 0 (nicht der letzten Station!): Station 0 ist immer als
+        /// erste freigeschaltet, die Schlange bleibt so auch im Fruehspiel
+        /// (nur eine Station sichtbar) in der Naehe des relevanten
+        /// Bildausschnitts -- an der letzten Station haengend zog sie die
+        /// Kamera-Rahmung (RecomputeCameraTarget) frueh auf einen Bereich
+        /// von 9+ Weltweinheiten Breite auseinander.
         /// </summary>
         public static Vector3 QueueSlot(int slot) =>
-            OnGround(GuestStandPosition(StationPosition(0)) - CounterDirection * (QueueSlotDistance * (slot + 1)));
+            OnGround(StationPosition(0)
+                + DepthDirection * (CounterGap + GuestStandDistance)
+                - RowDirection * (StationSpacing * 0.75f + QueueSlotDistance * (slot + 1)));
 
-        /// <summary>Eingang unterhalb des letzten Warteplatzes -- Gaeste laufen von dort ins Bild herein.</summary>
+        /// <summary>Eingang jenseits des letzten Warteplatzes -- Gaeste laufen von dort seitlich ins Bild herein.</summary>
         public static Vector3 Entrance =>
-            OnGround(QueueSlot(QueueCapacity - 1) - CounterDirection * 1.1f);
+            OnGround(QueueSlot(QueueCapacity - 1) + RowDirection * 1.1f);
 
-        /// <summary>Ausgang seitlich versetzt, damit hinausgehende Gaeste nicht durch die Schlange laufen.</summary>
+        /// <summary>Ausgang auf der Gastraumseite, versetzt, damit hinausgehende Gaeste nicht durch die Schlange laufen.</summary>
         public static Vector3 Exit =>
-            OnGround(Entrance + GuestSide * 1.6f - CounterDirection * 1.2f);
+            OnGround(Entrance + DepthDirection * 1.3f - RowDirection * 0.6f);
 
         private static Vector3 OnGround(Vector3 position) => new Vector3(position.x, GuestGroundY, position.z);
     }

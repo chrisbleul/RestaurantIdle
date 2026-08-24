@@ -138,7 +138,115 @@ durch.
   fehlt (PLANv4 R2).
 - Das Laufzeit-UI benutzt noch `UnityEngine.UI.Text` statt TextMeshPro, es gibt
   kein Object Pooling und keine Unity-Play-Mode-Tests (PLANv4 R4).
-- iOS ist bewusst noch nicht angefasst (PLANv4 R5).
+- iOS ist bewusst noch nicht angefasst (PLANv4 R5) -- siehe PLAN.md Abschnitt 4
+  fuer den vorgesehenen Weg (TestFlight statt App Store, Codemagic/macOS-Runner
+  statt eigener EC2-Mac-Instance, Bearer-Token-Auth statt Cookie-Login).
+- Kamera-Pan (Ziehen/Wischen, siehe unten) ist per Code fertig, aber noch nicht
+  auf einem echten Touch-Geraet bestaetigt -- synthetische Maus-Drags per
+  `xdotool` unter Xvfb sind dafuer nicht zuverlaessig genug.
+- Personal-Kochmuetze (siehe unten) ist prozedural erzeugt, aber noch nicht mit
+  einem tatsaechlich gekauften Manager im Spiel visuell geprueft.
+
+## Eatventure-Umbau (24.08.2026): Kueche unten, Tresen, Gastraum dahinter
+
+Nutzer-Feedback wollte drei Dinge auf einmal: Kamera per Ziehen bewegbar,
+Charaktergroesse an die Geraete gekoppelt statt fest, und ein Layout wie
+Eatventure -- Kuechenstationen in einer Reihe unten (nah an der Kamera), EIN
+durchgehender Tresen, Gaeste dahinter (weiter weg). Betraf `RestaurantLayout.cs`
+(komplett neu), `CIBuild.cs` (Szenenaufbau neu) und `GameManager.cs`
+(Charaktergroesse, Kamera-Pan, Personal-Silhouette).
+
+**Warum das mehrere Anlaeufe brauchte:** Bei einer isometrischen Kamera
+(Euler 55/45/0) laesst sich aus der Vektor-Algebra allein nicht ablesen, ob
+eine Weltrichtung im Bild nach oben/unten oder vorne/hinten faellt -- das
+muss man am Screenshot pruefen, jedes Mal neu. Drei falsche Vorzeichen-Annahmen
+hintereinander, jede erst nach einem Screenshot sichtbar:
+
+1. `RowRotation` war nur von `CounterRotation` umbenannt, nicht neu berechnet
+   -- die neue Reihen-Achse steht 90 Grad zur alten, Modelle standen quer.
+2. `DepthDirection` zeigte zunaechst so, dass Gaeste NAH an der Kamera und die
+   Kuechenwand WEIT weg lag -- genau umgekehrt zum Ziel. Nach dem Umdrehen
+   stand die (hohe) Wand dann NAH an der Kamera und verdeckte die (kuerzeren)
+   Kuechengeraete dahinter komplett -- eine Wand direkt hinter der Kueche
+   funktioniert bei diesem Kamerawinkel nicht. Endgueltige Loesung: Wand als
+   reiner Hintergrund hinter dem GESAMTEN Gastraum (`WallFarDepthOffset`,
+   nicht `WallDepthOffset`), nicht als Kulisse direkt hinter dem Personal.
+3. Die Warteschlange war am letzten Stationsplatz (Index 6) verankert, nicht
+   am ersten -- im Fruehspiel (nur Station 0 sichtbar) zog das die
+   Kamera-Rahmung (`RecomputeCameraTarget`) trotzdem ueber die volle
+   9-Einheiten-Reihenbreite. Jetzt an Station 0 verankert (immer als erste
+   freigeschaltet).
+
+**Geraete schwebten sichtbar ueber der Theke:** `CounterHeight` als
+Geraete-Y-Position angenommen ging davon aus, dass die Theke ihren Pivot an
+der Basis hat. Die Kenney-Module haben ihn aber an einer ECKE (siehe
+`InstantiateModel`-Kommentar) -- die tatsaechliche Oberkante lag nicht exakt
+bei `CounterHeight`. Fix: `MeasureScaledTopY()` misst die echte
+Modell-Oberkante bei Zielgroesse, statt sie anzunehmen.
+
+**Charaktergroesse:** `GuestSpriteScale` war ein freistehender fester Wert
+(0.55), jetzt ein Anteil von `RestaurantLayout.CounterHeight`
+(`GuestHeightRatio = 0.67`) -- Personen skalieren automatisch mit, falls die
+Geraetegroesse sich je aendert.
+
+**Kamera-Pan:** `HandleStationTap()` (nur Press-Erkennung) wurde zu
+`HandlePointerInput()` (echter Press/Drag/Release-Automat). Bewegung ueber
+`DragThresholdPixels` (18px) wird als Kamera-Ziehen gewertet und unterdrueckt
+den Tap; `PanCamera()` rechnet Bildschirm-Pixel in Weltversatz um
+(`unitsPerPixel = 2 * orthographicSize / Screen.height`, fuer eine
+orthografische Kamera unabhaengig von Breite/Hoehe) und klemmt auf
+`PanClampRow`/`PanClampDepth`, damit man nicht ins Leere ziehen kann. Der
+Versatz addiert sich in `ApplyCameraFraming` auf das automatische
+Framing-Ziel drauf -- die Auto-Kamera bleibt im Hintergrund aktiv.
+
+**Personal-Silhouette:** Personal nutzte bisher exakt dasselbe Sprite wie
+Gaeste, nur eingefaerbt (Kenney Toon Characters liefert nur die vier
+Gast-Bilder im Projekt, kein zweites Set, und ein Nachladen aus dem Netz war
+ohne genaue Quelle zu riskant). Stattdessen `GameAssets.ChefHatSprite`:
+prozedural erzeugte Kochmuetze (zwei ueberlappende Ellipsen, gleiches
+Alpha-Verlauf-Verfahren wie `BlobShadowSprite`), als Kind-GameObject ueber
+dem Kopf -- echte Silhouetten-Unterscheidung ohne neuen Asset-Import.
+
+## Arbeiten mit Claude Code an diesem Projekt
+
+Regeln, die sich in mehreren Sessions bewaehrt haben:
+
+- **Immer Rueckfragen stellen, ob alles richtig verstanden wurde, bevor
+  groessere Aenderungen umgesetzt werden** -- und zwar als anklickbare Auswahl
+  (Claude Codes `AskUserQuestion`-Tool), nicht als reiner Fliesstext, den man
+  selbst beantworten muss.
+- **Jede Aenderung zusaetzlich mit einem lokalen WebGL-Build validieren**,
+  nicht nur im Editor-Play-Mode -- der Editor strippt nie Shader, ein echter
+  Build kann sich sichtbar unterscheiden (siehe Pink-Bug oben).
+- Bei jeder UI-/Grafik-Aenderung fuer **Smartphone-Aufloesung** pruefen (siehe
+  `RestaurantIdle/Game-View auf iPhone 16 Pro Max (1290x2796)`), nicht nur
+  die grobe 1080x1920-Naeherung -- ein iPhone 16 Pro Max ist mit 0.4614
+  spuerbar schmaler als 0.5625.
+- Kommunikationssprache in diesem Projekt ist Deutsch.
+- Bei laengeren Hintergrund-Laeufen (Build, Editor-Boot) zwischendurch kurz
+  Bescheid geben statt schweigend zu warten.
+
+### Stolpersteine bei der Editor-Fernsteuerung per SSH/Xvfb (fuer naechste Runden)
+
+- **CPU-Auslastung ist kein verlaessliches "Editor fertig geladen"-Signal.**
+  Mit laufendem mcp-unity pollt der Editor dauerhaft mit 20--35 % CPU, auch im
+  Leerlauf. Bereitschaft stattdessen per Screenshot pruefen, nicht per
+  CPU-Schwelle.
+- **`pkill -f "<muster>"` kann sich selbst treffen**, wenn das Suchmuster im
+  eigenen Bash-Aufruf als Text vorkommt (`pkill -f "http.server"` matcht die
+  eigene `bash -c 'pkill -f "http.server"'`-Zeile) -- die SSH-Sitzung bricht
+  dann mit Exit 255 ab. Fuer Port-basiertes Beenden stattdessen
+  `fuser -k <port>/tcp` nutzen.
+- **Play Mode ueberlebt Skript-Neukompilierungen** (Domain-Reload uebernimmt
+  neuen Code, aber nicht die Szene) -- nach groesseren Struktur-Aenderungen
+  fuehrt das zu verwirrenden, veralteten Zwischenstaenden. Play Mode nach
+  so einer Aenderung explizit stoppen und die Szene ueber
+  `RestaurantIdle/Szene fuer Editor erzeugen` neu bauen, nicht nur neu
+  kompilieren lassen.
+- Lokale WebGL-Builds brauchen fuer sichtbare Gast-Sprites unter
+  Software-Rendering (Swiftshader, wie es dieser Xvfb-Aufbau nutzt) deutlich
+  laenger zum "Aufwaermen" als der native Editor (~90s statt ~25s) -- kein
+  Bug, nur ein langsameres erstes Frame.
 
 ## Entwicklung
 
