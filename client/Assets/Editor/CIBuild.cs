@@ -225,11 +225,12 @@ namespace RestaurantIdle.Editor
 
         private static void BuildGround()
         {
-            // Station 3 (die mittlere von 7) liegt per RowOffset exakt im
-            // Reihen-Ursprung -- dieselbe Mitte fuer Rasen/Innenboden wie
-            // zuvor, nur jetzt tatsaechlich die geometrische Mitte der
-            // gesamten Reihe statt nur der ersten Station.
-            var center = RestaurantLayout.StationPosition(3);
+            // Beide Kuechenreihen (ColumnOffset) sind unabhaengig vom
+            // Umbau auf x=0 zentriert -- die einzige Groesse, die die
+            // Mitte noch verschiebt, ist die Tiefe: mittig zwischen der
+            // hinteren Kuechenreihe (BackRowDepthOffset, negativ) und der
+            // Hintergrundwand (WallFarDepthOffset, positiv).
+            var center = RestaurantLayout.DepthDirection * ((WallFarDepthOffset - RestaurantLayout.BackRowDepthOffset) * 0.5f);
 
             var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
             ground.name = "Ground";
@@ -246,19 +247,31 @@ namespace RestaurantIdle.Editor
             // Gastraum ab (Eatventure-Layout: beide Zonen sind ein
             // durchgehender Innenraum, nicht mehr Theke + separater
             // Aussenbereich).
+            //
+            // Nutzer-Feedback (2-Zeilen-Kuechenraster, spaeter "unten soll
+            // nur das Restaurant sein, kein Rasen"): die hintere
+            // Kuechenreihe steht BackRowDepthOffset tief in der negativen
+            // Richtung -- der Innenboden muss also nicht mehr nur bis zur
+            // Wand (positiv), sondern auch weit hinter die hintere Reihe
+            // (negativ) reichen. Ein knapper Puffer (+0.9) reichte nur fuer
+            // die engste Fruehspiel-Kamera; beim Rauszoomen (mehr Stationen,
+            // CameraFramingMarginY) wandert die untere Bildkante weiter nach
+            // unten als der Innenboden reichte -- Rasen wurde am unteren
+            // Rand sichtbar. Deutlich groesserer Puffer, in derselben
+            // Groessenordnung wie WallFarDepthOffset auf der Gegenseite.
+            var floorNearDepth = -(RestaurantLayout.BackRowDepthOffset + 3.5f);
+            var floorFarDepth = WallFarDepthOffset;
+            var floorDepthSpan = floorFarDepth - floorNearDepth;
+
             var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
             floor.name = "InteriorFloor";
-            // Deckt von der Kuechenseite (kleine negative Tiefe, Deko wie
-            // Haengeschrank/Muelleimer) bis kurz vor die Hintergrundwand
-            // (WallFarDepthOffset) ab -- sonst zeigt der Streifen zwischen
-            // Gastraum-Ende und Wand Rasen statt Innenboden.
-            floor.transform.position = new Vector3(center.x, 0.012f, center.z)
-                + RestaurantLayout.DepthDirection * (WallFarDepthOffset * 0.5f);
+            floor.transform.position = new Vector3(0f, 0.012f, 0f)
+                + RestaurantLayout.DepthDirection * ((floorFarDepth + floorNearDepth) * 0.5f);
             floor.transform.rotation = RestaurantLayout.RowRotation;
             // Plane ist nativ 10x10 Einheiten: lokale X-Achse laeuft nach
             // dem Drehen entlang der Stationsreihe (RowDirection), lokale
             // Z-Achse entlang der Tiefe (DepthDirection).
-            floor.transform.localScale = new Vector3(1.1f, 1f, (WallFarDepthOffset + 1f) / 10f);
+            floor.transform.localScale = new Vector3(1.1f, 1f, floorDepthSpan / 10f);
             floor.GetComponent<MeshRenderer>().sharedMaterial = new Material(Shader.Find("Universal Render Pipeline/Lit"))
             {
                 color = new Color(0.82f, 0.71f, 0.56f),
@@ -289,7 +302,9 @@ namespace RestaurantIdle.Editor
             // Ueberstand von einer halben Stationsbreite an jedem Ende --
             // der Tresen soll sichtbar ueber die aeusseren Stationen
             // hinausragen, nicht buendig mit ihrer Mitte abschliessen.
-            var length = RestaurantLayout.StationSpacing * RestaurantLayout.StationCount + RestaurantLayout.StationSpacing;
+            // Deckt nur die VORDERE Kuechenreihe (FrontRowCount) ab -- die
+            // hintere Reihe steht frei auf dem Boden, siehe BuildStations.
+            var length = RestaurantLayout.StationSpacing * RestaurantLayout.FrontRowCount + RestaurantLayout.StationSpacing;
             var count = Mathf.CeilToInt(length / segmentWidth);
             var start = RestaurantLayout.StationPosition(0) - RestaurantLayout.RowDirection * (length * 0.5f);
 
@@ -309,6 +324,17 @@ namespace RestaurantIdle.Editor
             Debug.Log($"Tresen: {count} Segmente a {segmentWidth:F2} Einheiten.");
         }
 
+        /// <summary>
+        /// Nutzer-Feedback ("Geraete besser im Arbeitsbereich verteilt",
+        /// "Bewegen des Bildschirms soll nicht noetig sein"): statt einer
+        /// einzelnen 7 breite Reihe stehen die Stationen jetzt in zwei
+        /// Kuechenreihen (siehe RestaurantLayout.FrontRowCount/
+        /// BackRowDepthOffset) -- vordere Reihe auf dem Tresen (wie
+        /// bisher), hintere Reihe freistehend auf dem Boden dahinter. Der
+        /// Gast wartet fuer BEIDE Reihen an derselben Tresenlinie
+        /// (RestaurantLayout.GuestStandPosition) -- die hintere Reihe hat
+        /// keine eigene Gastfront, sie ist reiner Kuechen-Arbeitsplatz.
+        /// </summary>
         private static void BuildStations()
         {
             var rotation = RestaurantLayout.RowRotation;
@@ -317,9 +343,35 @@ namespace RestaurantIdle.Editor
             // anzunehmen -- siehe MeasureScaledTopY-Kommentar.
             var counterTopY = MeasureScaledTopY("Assets/Models/Furniture/kitchenBar.fbx", RestaurantLayout.CounterHeight);
 
-            InstantiateModel("Assets/Models/Furniture/kitchenCoffeeMachine.fbx", "Station_Kaffeemaschine",
-                RestaurantLayout.StationPosition(0) + new Vector3(0f, counterTopY, 0f),
-                rotation, 0.45f, FitAxis.Height, stationIndex: 0);
+            // Vordere Reihe (StationCatalog Index 0-3) -- auf dem Tresen,
+            // wie bisher.
+            var frontStations = new (string Model, string StationName, float Height)[]
+            {
+                ("kitchenCoffeeMachine.fbx", "Kaffeemaschine", 0.45f),
+                ("kitchenStoveElectric.fbx", "Fritteuse", 0.95f),
+                ("kitchenStove.fbx", "Grill", 0.95f),
+                ("kitchenMicrowave.fbx", "Pizzaofen", 0.55f),
+            };
+
+            for (var i = 0; i < frontStations.Length; i++)
+            {
+                var (model, stationName, height) = frontStations[i];
+                var position = RestaurantLayout.StationPosition(i) + new Vector3(0f, counterTopY, 0f);
+                InstantiateModel($"Assets/Models/Furniture/{model}", $"Station_{stationName}",
+                    position, rotation, height, FitAxis.Height, stationIndex: i);
+
+                // Haengeschrank an der Rueckwand hinter jeder zweiten
+                // Station -- fuellt die sonst voellig leere Wandflaeche,
+                // ohne den Blick auf die Station selbst zu nehmen.
+                if (i % 2 == 0)
+                {
+                    InstantiateModel("Assets/Models/Furniture/kitchenCabinetUpper.fbx", $"Haengeschrank_{i}",
+                        RestaurantLayout.StationPosition(i)
+                            - RestaurantLayout.DepthDirection * (WallDepthOffset - 0.3f)
+                            + new Vector3(0f, 1.5f, 0f),
+                        rotation, 0.6f);
+                }
+            }
 
             // Nicht auf den Warteplatz selbst: dort steht der bediente
             // Gast, Hocker und Sprite lagen im Testlauf uebereinander. Der
@@ -330,37 +382,22 @@ namespace RestaurantIdle.Editor
             InstantiateModel("Assets/Models/Furniture/stoolBar.fbx", "Hocker",
                 new Vector3(stoolSpot.x, 0f, stoolSpot.z), rotation, 0.7f);
 
-            // Restliche 6 Stationen (StationCatalog.All Index 1-6) --
-            // Modelle sind Annaeherungen (kein 1:1-Match zu jedem
-            // Stationsnamen im Kenney-Kit vorhanden).
-            var remainingStations = new (string Model, string StationName, float Height)[]
+            // Hintere Reihe (StationCatalog Index 4-6) -- freistehend auf
+            // dem Boden, kein Tresensegment noetig (Y=0 wie beim Hocker).
+            var backStations = new (string Model, string StationName, float Height)[]
             {
-                ("kitchenStoveElectric.fbx", "Fritteuse", 0.95f),
-                ("kitchenStove.fbx", "Grill", 0.95f),
-                ("kitchenMicrowave.fbx", "Pizzaofen", 0.55f),
                 ("kitchenSink.fbx", "Sushi-Bar", 0.9f),
                 ("kitchenFridgeSmall.fbx", "Patisserie", 1.1f),
                 ("tableRound.fbx", "Chefs Table", 0.8f),
             };
 
-            for (var i = 0; i < remainingStations.Length; i++)
+            for (var i = 0; i < backStations.Length; i++)
             {
-                var (model, stationName, height) = remainingStations[i];
-                var position = RestaurantLayout.StationPosition(i + 1) + new Vector3(0f, counterTopY, 0f);
+                var stationIndex = RestaurantLayout.FrontRowCount + i;
+                var (model, stationName, height) = backStations[i];
+                var position = RestaurantLayout.StationPosition(stationIndex);
                 InstantiateModel($"Assets/Models/Furniture/{model}", $"Station_{stationName}",
-                    position, rotation, height, FitAxis.Height, stationIndex: i + 1);
-
-                // Haengeschrank an der Rueckwand hinter jeder zweiten
-                // Station -- fuellt die sonst voellig leere Wandflaeche,
-                // ohne den Blick auf die Station selbst zu nehmen.
-                if (i % 2 == 0)
-                {
-                    InstantiateModel("Assets/Models/Furniture/kitchenCabinetUpper.fbx", $"Haengeschrank_{i}",
-                        RestaurantLayout.StationPosition(i + 1)
-                            - RestaurantLayout.DepthDirection * (WallDepthOffset - 0.3f)
-                            + new Vector3(0f, 1.5f, 0f),
-                        rotation, 0.6f);
-                }
+                    position, rotation, height, FitAxis.Height, stationIndex: stationIndex);
             }
 
             InstantiateModel("Assets/Models/Furniture/hoodModern.fbx", "Dunstabzug",
@@ -385,7 +422,7 @@ namespace RestaurantIdle.Editor
                 return;
             }
 
-            var length = RestaurantLayout.StationSpacing * RestaurantLayout.StationCount + RestaurantLayout.StationSpacing;
+            var length = RestaurantLayout.StationSpacing * RestaurantLayout.FrontRowCount + RestaurantLayout.StationSpacing;
             var count = Mathf.CeilToInt(length / segmentWidth);
             var start = RestaurantLayout.StationPosition(0)
                 - RestaurantLayout.RowDirection * (length * 0.5f)
@@ -421,10 +458,12 @@ namespace RestaurantIdle.Editor
 
             // Sitzgruppen im Gastraum, weiter von der Theke entfernt als der
             // direkte Warteplatz -- ausserhalb der Laufwege der Schlange.
-            for (var i = 0; i < 3; i++)
+            // RestaurantLayout.DiningTablePosition statt einer lokalen
+            // Formel: dieselbe Position wird auch von RecomputeCameraTarget
+            // (GameManager) fuer die Kamera-Rahmung gebraucht.
+            for (var i = 0; i < RestaurantLayout.DiningTableCount; i++)
             {
-                var anchor = RestaurantLayout.StationPosition(i * 2 - 1)
-                    + RestaurantLayout.DepthDirection * 2.2f;
+                var anchor = RestaurantLayout.DiningTablePosition(i);
 
                 InstantiateModel("Assets/Models/Furniture/tableCloth.fbx", $"Gasttisch_{i}",
                     anchor, rotation, 0.75f);
@@ -446,8 +485,13 @@ namespace RestaurantIdle.Editor
                     - RestaurantLayout.RowDirection * 0.8f
                     + new Vector3(0f, RestaurantLayout.CounterHeight, 0f),
                 rotation, 0.25f);
+            // StationPosition(1) statt (4): Index 4 liegt seit dem
+            // 2-Zeilen-Kuechenraster in der HINTEREN Reihe (naeher an der
+            // Kueche, nicht am Gastraum) -- als Anker fuer eine Stehlampe im
+            // Gastraum bleibt eine Position aus der vorderen (Tresen-)Reihe
+            // die richtige Referenztiefe.
             InstantiateModel("Assets/Models/Furniture/lampSquareFloor.fbx", "Stehlampe",
-                RestaurantLayout.StationPosition(4) + RestaurantLayout.DepthDirection * 2.6f, rotation, 1.5f);
+                RestaurantLayout.StationPosition(1) + RestaurantLayout.DepthDirection * 2.6f, rotation, 1.5f);
             InstantiateModel("Assets/Models/Furniture/trashcan.fbx", "Muelleimer",
                 RestaurantLayout.StationPosition(0) - RestaurantLayout.DepthDirection * (WallDepthOffset - 0.3f)
                     - RestaurantLayout.RowDirection * 1.2f,

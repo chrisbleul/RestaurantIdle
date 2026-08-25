@@ -75,6 +75,85 @@ namespace RestaurantIdle.Game
             return sprite;
         }
 
+        private static readonly Dictionary<string, GameObject> CharacterPrefabs = new();
+
+        /// <summary>
+        /// Nutzer-Feedback ("nichts passt optisch zusammen"): Gaeste/Personal
+        /// waren flache 2D-Billboard-Sprites (Kenney Toon Characters) mitten
+        /// in einer echten 3D-Szene mit Kenney-Furniture-Kit-Moebeln -- ein
+        /// Stilbruch unabhaengig vom gewaehlten 2D-Set. Kenney Mini Characters
+        /// (Resources/Characters3D) ist derselbe Baukasten-Stil wie das
+        /// Furniture Kit. Zwoelf Varianten fuer sichtbare Abwechslung
+        /// zwischen Gaesten statt eines einzigen, nur eingefaerbten Sprites.
+        /// </summary>
+        private static readonly string[] CharacterModelNames =
+        {
+            "character-female-a", "character-female-b", "character-female-c",
+            "character-female-d", "character-female-e", "character-female-f",
+            "character-male-a", "character-male-b", "character-male-c",
+            "character-male-d", "character-male-e", "character-male-f",
+        };
+
+        /// <summary>
+        /// Instanziert ein zufaelliges 3D-Charaktermodell als Kind von
+        /// <paramref name="parent"/> und skaliert es auf targetHeight --
+        /// dieselbe "gemessen statt angenommen"-Logik wie
+        /// CIBuild.InstantiateModel fuers Mobiliar (die Modelle sind
+        /// untereinander nicht zwingend exakt gleich hoch). Optionale
+        /// Einfaerbung (z. B. VIP-Gaeste) ueber MaterialPropertyBlock statt
+        /// <c>renderer.material</c> -- Letzteres legt pro Aufruf eine neue
+        /// Material-Instanz an, die beim Zerstoeren des Gastes NICHT
+        /// mitzerstoert wird (siehe Klassen-Remarks zum Partikel-Material).
+        /// </summary>
+        public static Transform InstantiateRandomCharacter(Transform parent, float targetHeight, Color? tint = null)
+        {
+            var name = CharacterModelNames[UnityEngine.Random.Range(0, CharacterModelNames.Length)];
+            if (!CharacterPrefabs.TryGetValue(name, out var prefab) || prefab == null)
+            {
+                prefab = Resources.Load<GameObject>($"Characters3D/{name}");
+                CharacterPrefabs[name] = prefab;
+            }
+
+            if (prefab == null)
+            {
+                return null;
+            }
+
+            var instance = Object.Instantiate(prefab, parent);
+            instance.transform.localPosition = Vector3.zero;
+            instance.transform.localRotation = Quaternion.identity;
+            instance.transform.localScale = Vector3.one;
+
+            var renderers = instance.GetComponentsInChildren<Renderer>();
+            if (renderers.Length > 0)
+            {
+                var bounds = renderers[0].bounds;
+                foreach (var r in renderers)
+                {
+                    bounds.Encapsulate(r.bounds);
+                }
+
+                if (bounds.size.y > 0.0001f)
+                {
+                    instance.transform.localScale = Vector3.one * (targetHeight / bounds.size.y);
+                }
+
+                if (tint.HasValue)
+                {
+                    var block = new MaterialPropertyBlock();
+                    block.SetColor(BaseColorId, tint.Value);
+                    foreach (var r in renderers)
+                    {
+                        r.SetPropertyBlock(block);
+                    }
+                }
+            }
+
+            return instance.transform;
+        }
+
+        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+
         private static readonly Dictionary<string, AudioClip> Clips = new();
         private static AudioSource sfxSource;
 
@@ -266,6 +345,7 @@ namespace RestaurantIdle.Game
         private static void ResetStatics()
         {
             Sprites.Clear();
+            CharacterPrefabs.Clear();
             Clips.Clear();
             sfxSource = null;
             uiFont = null;

@@ -9,66 +9,37 @@ namespace RestaurantIdle.Game
     /// wahrnehmbaren Bereich geklemmt, sonst waeren spaete Stationen
     /// praktisch bewegungslos.
     ///
-    /// Bewegt sich auf zwei Arten: Auf-/Ab-Wippen (schon vorher) UND der
-    /// Bildfolge des Kenney-Sprites. Nur zu wippen war ein Rest aus der
-    /// Zeit, als das Personal noch eine weisse Kapsel ohne Einzelbilder war
-    /// -- als Charakter-Sprite stand es unbewegt an der Station und wirkte
-    /// eher abgestellt als arbeitend.
+    /// Bewegt sich auf zwei Arten: Auf-/Ab-Wippen UND ein leichtes Drehen
+    /// des 3D-Modells (Nutzer-Feedback "nichts passt optisch zusammen" --
+    /// siehe GuestSpriteAnimator-Kommentar zum Wechsel auf Kenney Mini
+    /// Characters; das Paket bringt keine Animationsclips mit, das Drehen
+    /// ersetzt die fruehere Sprite-Bildfolge als "arbeitet gerade"-Signal).
     /// </summary>
-    [RequireComponent(typeof(SpriteRenderer))]
     public class StaffWorker : MonoBehaviour
     {
         private const float BobAmplitude = 0.06f;
+        private const float WiggleDegrees = 14f;
 
         private float periodSeconds;
         private Vector3 basePosition;
-        private SpriteRenderer spriteRenderer;
-        private Sprite[] workFrames;
-        private float frameInterval;
-        private float frameTimer;
-        private int frameIndex;
+        private Transform model;
 
-        public void Init(Vector3 position, double stationCycleSeconds)
+        public void Init(Vector3 position, Transform model, double stationCycleSeconds)
         {
             basePosition = position;
             transform.position = position;
+            this.model = model;
             periodSeconds = Mathf.Clamp((float)stationCycleSeconds, 0.4f, 1.6f);
-
-            spriteRenderer = GetComponent<SpriteRenderer>();
-            workFrames = new[]
-            {
-                GameAssets.LoadSprite("Characters/guest-run0"),
-                GameAssets.LoadSprite("Characters/guest-run1"),
-                GameAssets.LoadSprite("Characters/guest-run2"),
-            };
-
-            // Eine volle Bildfolge je Wipp-Periode: Bewegung und Bildwechsel
-            // laufen damit im selben Takt wie der Produktionszyklus der
-            // Station, statt zufaellig gegeneinander.
-            frameInterval = periodSeconds / workFrames.Length;
         }
 
         private void Update()
         {
-            var bob = Mathf.Sin(Time.time * (2f * Mathf.PI / periodSeconds)) * BobAmplitude;
-            transform.position = basePosition + new Vector3(0f, bob, 0f);
+            var phase = Time.time * (2f * Mathf.PI / periodSeconds);
+            transform.position = basePosition + new Vector3(0f, Mathf.Sin(phase) * BobAmplitude, 0f);
 
-            if (workFrames == null || frameInterval <= 0f)
+            if (model != null)
             {
-                return;
-            }
-
-            frameTimer += Time.deltaTime;
-            if (frameTimer < frameInterval)
-            {
-                return;
-            }
-
-            frameTimer = 0f;
-            frameIndex = (frameIndex + 1) % workFrames.Length;
-            if (workFrames[frameIndex] != null)
-            {
-                spriteRenderer.sprite = workFrames[frameIndex];
+                model.localRotation = Quaternion.Euler(0f, Mathf.Sin(phase) * WiggleDegrees, 0f);
             }
         }
     }

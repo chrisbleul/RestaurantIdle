@@ -3,27 +3,33 @@ using UnityEngine;
 namespace RestaurantIdle.Game
 {
     /// <summary>
-    /// PLANv3.md Abschnitt 5 ("Charaktere statt Kapseln. Kenney Toon
-    /// Characters liegen bereits im Projekt ... hoechste Wirkung pro
-    /// Aufwand im gesamten Plan"): ersetzt das eingefaerbte Kapsel-
-    /// Primitive durch ein Billboard-Sprite mit einfachem Lauf-Zyklus.
-    /// GuestWalker.cs (der urspruengliche, im Plan erwaehnte erste Versuch)
-    /// war 2D-UI-RectTransform-basiert und liess sich nicht in die 3D-Szene
-    /// uebernehmen -- wurde deshalb entfernt statt "verdrahtet" (siehe
-    /// PLANv3 Phase C).
+    /// Nutzer-Feedback ("nichts passt optisch zusammen"): steuerte bisher
+    /// ein flaches 2D-Billboard-Sprite (Kenney Toon Characters), das sich
+    /// permanent zur Kamera drehte -- ein Stilbruch mitten in einer echten
+    /// 3D-Szene aus Kenney-Furniture-Kit-Moebeln, unabhaengig vom gewaehlten
+    /// 2D-Set. Instanziert jetzt stattdessen ein echtes 3D-Mini-Character-
+    /// Modell (siehe GameAssets.InstantiateRandomCharacter) und dreht es zur
+    /// tatsaechlichen Laufrichtung statt zur Kamera -- Billboard ist fuer
+    /// ein 3D-Modell ohnehin unnoetig.
+    ///
+    /// Klassenname bewusst beibehalten (nicht in z. B. GuestVisual
+    /// umbenannt) -- GameManager referenziert ihn an mehreren Stellen, eine
+    /// Umbenennung waere reine Kosmetik ohne Verhaltensaenderung.
     /// </summary>
-    [RequireComponent(typeof(SpriteRenderer), typeof(GuestMover))]
+    [RequireComponent(typeof(GuestMover))]
     public class GuestSpriteAnimator : MonoBehaviour
     {
-        private const float FrameSeconds = 0.15f;
-
         /// <summary>
         /// Ab welchem Anteil verbrauchter Geduld der wartende Gast anfaengt,
         /// unruhig zu werden -- darunter steht er ruhig.
         /// </summary>
         private const float FidgetThreshold = 0.45f;
-        private const float FidgetSlowSeconds = 0.5f;
-        private const float FidgetFastSeconds = 0.14f;
+        private const float FidgetSlowDegreesPerSecond = 90f;
+        private const float FidgetFastDegreesPerSecond = 260f;
+        private const float FidgetAmplitudeDegrees = 10f;
+
+        /// <summary>Wie schnell sich die Figur zur Laufrichtung dreht -- endlich statt sofort, sonst "snapt" sie bei jeder Zielaenderung sichtbar.</summary>
+        private const float TurnDegreesPerSecond = 480f;
 
         /// <summary>
         /// 0 = gerade angekommen, 1 = geht gleich unbedient. Wird vom
@@ -38,63 +44,73 @@ namespace RestaurantIdle.Game
         /// </summary>
         public float Impatience { get; set; }
 
-        private SpriteRenderer spriteRenderer;
         private GuestMover mover;
-        private Sprite idleSprite;
-        private Sprite[] runFrames;
-        private int frameIndex;
-        private float frameTimer;
+        private Transform model;
+        private Vector3 lastPosition;
 
-        private void Awake()
+        /// <summary>
+        /// Ersetzt Awake-basierte Instanziierung: GameManager setzt
+        /// Zielgroesse/Einfaerbung erst NACH AddComponent, ein Awake haette
+        /// das Modell bereits mit Default-Werten (Hoehe 0) angelegt.
+        /// </summary>
+        public void Init(float targetHeight, Color? tint)
         {
-            spriteRenderer = GetComponent<SpriteRenderer>();
             mover = GetComponent<GuestMover>();
-            idleSprite = GameAssets.LoadSprite("Characters/guest-idle");
-            runFrames = new[]
-            {
-                GameAssets.LoadSprite("Characters/guest-run0"),
-                GameAssets.LoadSprite("Characters/guest-run1"),
-                GameAssets.LoadSprite("Characters/guest-run2"),
-            };
+            model = GameAssets.InstantiateRandomCharacter(transform, targetHeight, tint);
+            lastPosition = transform.position;
         }
 
         private void Update()
         {
-            var interval = FrameSeconds;
-
-            if (mover.CurrentPhase == GuestMover.Phase.Waiting)
-            {
-                if (Impatience < FidgetThreshold)
-                {
-                    if (idleSprite != null)
-                    {
-                        spriteRenderer.sprite = idleSprite;
-                    }
-
-                    frameTimer = 0f;
-                    return;
-                }
-
-                // Je knapper die Geduld, desto schneller das Zappeln -- ein
-                // stetiger Uebergang statt eines harten Zustandswechsels,
-                // damit die Dringlichkeit ablesbar ist und nicht nur ihr
-                // Vorhandensein.
-                var urgency = Mathf.InverseLerp(FidgetThreshold, 1f, Impatience);
-                interval = Mathf.Lerp(FidgetSlowSeconds, FidgetFastSeconds, urgency);
-            }
-
-            frameTimer += Time.deltaTime;
-            if (frameTimer < interval)
+            if (model == null)
             {
                 return;
             }
 
-            frameTimer = 0f;
-            frameIndex = (frameIndex + 1) % runFrames.Length;
-            if (runFrames[frameIndex] != null)
+            TurnTowardMovement();
+            ApplyFidget();
+        }
+
+        /// <summary>Dreht die Figur zur tatsaechlichen Bewegungsrichtung statt zum Laufziel -- bei Ankunft/Richtungswechsel bleibt sie sonst fuer einen Frame in die alte Richtung ausgerichtet, bevor CurrentTarget nachzieht.</summary>
+        private void TurnTowardMovement()
+        {
+            var delta = transform.position - lastPosition;
+            lastPosition = transform.position;
+            delta.y = 0f;
+
+            if (delta.sqrMagnitude < 0.0000001f)
             {
-                spriteRenderer.sprite = runFrames[frameIndex];
+                return;
             }
+
+            var targetRotation = Quaternion.LookRotation(delta);
+            transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, TurnDegreesPerSecond * Time.deltaTime);
+        }
+
+        /// <summary>
+        /// Leichtes Hin-und-her-Wackeln des Modells bei knapper Geduld statt
+        /// des frueheren Sprite-Frame-Wechsels -- das Mini-Characters-Paket
+        /// bringt keine Animationsclips mit (siehe README).
+        /// </summary>
+        private void ApplyFidget()
+        {
+            if (mover.CurrentPhase != GuestMover.Phase.Waiting || Impatience < FidgetThreshold)
+            {
+                if (model.localRotation != Quaternion.identity)
+                {
+                    model.localRotation = Quaternion.identity;
+                }
+
+                return;
+            }
+
+            // Je knapper die Geduld, desto schneller das Zappeln -- ein
+            // stetiger Uebergang statt eines harten Zustandswechsels, damit
+            // die Dringlichkeit ablesbar ist und nicht nur ihr Vorhandensein.
+            var urgency = Mathf.InverseLerp(FidgetThreshold, 1f, Impatience);
+            var speed = Mathf.Lerp(FidgetSlowDegreesPerSecond, FidgetFastDegreesPerSecond, urgency);
+            var wiggle = Mathf.Sin(Time.time * speed * Mathf.Deg2Rad) * FidgetAmplitudeDegrees;
+            model.localRotation = Quaternion.Euler(0f, wiggle, 0f);
         }
     }
 }

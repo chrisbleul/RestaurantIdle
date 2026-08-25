@@ -69,17 +69,49 @@ namespace RestaurantIdle.Game
         /// <summary>Anzahl Stationen -- fuer die zentrierte Reihe (RowOffset), muss zu StationCatalog.All.Length passen.</summary>
         public const int StationCount = 7;
 
-        /// <summary>Reihen-Position relativ zur Mitte, statt von Index 0 aus wachsend -- die Reihe bleibt beim Rauszoomen mittig statt einseitig zu wandern.</summary>
-        private static float RowOffset(int index) => (index - (StationCount - 1) / 2f) * StationSpacing;
+        /// <summary>
+        /// Nutzer-Feedback ("Geraete besser im Arbeitsbereich verteilt",
+        /// "Bewegen des Bildschirms soll nicht noetig sein"): die vorherige
+        /// einzelne 7 breite Reihe brauchte entweder Pan oder starkes
+        /// Rauszoomen. Die Stationen stehen jetzt in zwei Kuechenreihen --
+        /// vordere Reihe (auf dem Tresen, Gast-Seite) und hintere Reihe
+        /// (freistehend auf dem Boden, tiefer in der Kueche) --, halb so
+        /// breit wie vorher und damit eher ohne Ziehen im Bild.
+        /// </summary>
+        public const int FrontRowCount = 4;
 
-        public static Vector3 StationPosition(int index) => RowDirection * RowOffset(index);
+        private const int BackRowCount = StationCount - FrontRowCount;
 
-        /// <summary>Gast-Warteplatz direkt hinter dem Tresen, quer zur zugehoerigen Station.</summary>
-        public static Vector3 GuestStandPosition(int stationIndex) => GuestStandPosition(StationPosition(stationIndex));
+        /// <summary>Abstand der hinteren Kuechenreihe von der vorderen (Tresen-)Reihe, entgegen DepthDirection (tiefer in die Kueche, weg vom Gastraum).</summary>
+        public const float BackRowDepthOffset = 1.6f;
 
-        /// <summary>Ueberladen fuer Aufrufer, die schon eine Weltposition der Station haben.</summary>
-        public static Vector3 GuestStandPosition(Vector3 stationPosition) =>
-            OnGround(stationPosition + DepthDirection * (CounterGap + GuestStandDistance));
+        private static bool IsFrontRow(int stationIndex) => stationIndex < FrontRowCount;
+
+        private static int ColumnIndex(int stationIndex) => IsFrontRow(stationIndex) ? stationIndex : stationIndex - FrontRowCount;
+
+        private static int ColumnsInRow(int stationIndex) => IsFrontRow(stationIndex) ? FrontRowCount : BackRowCount;
+
+        /// <summary>Reihen-Position relativ zur Mitte, statt von Index 0 aus wachsend -- jede Kuechenreihe bleibt beim Rauszoomen mittig statt einseitig zu wandern.</summary>
+        private static float ColumnOffset(int column, int columnsInRow) => (column - (columnsInRow - 1) / 2f) * StationSpacing;
+
+        /// <summary>Reine Spaltenposition einer Station (nur RowDirection, ohne Tiefe) -- gemeinsame Basis fuer Geraete- UND Gastposition.</summary>
+        private static Vector3 ColumnPosition(int stationIndex) => RowDirection * ColumnOffset(ColumnIndex(stationIndex), ColumnsInRow(stationIndex));
+
+        /// <summary>Geraeteposition: vordere Reihe auf Tiefe 0 (Tresen), hintere Reihe BackRowDepthOffset weiter in die Kueche.</summary>
+        public static Vector3 StationPosition(int index) =>
+            IsFrontRow(index) ? ColumnPosition(index) : ColumnPosition(index) - DepthDirection * BackRowDepthOffset;
+
+        /// <summary>
+        /// Gast-Warteplatz -- bewusst IMMER auf der Spaltenposition an der
+        /// vorderen Tresenlinie, unabhaengig davon, ob das zugehoerige
+        /// Geraet in der vorderen oder hinteren Kuechenreihe steht. Ein
+        /// Gast, der fuer eine Station der hinteren Reihe an DEREN
+        /// tatsaechlicher (weiter hinten liegender) Tiefe warten wuerde,
+        /// stuende mitten in der vorderen Reihe -- die hintere Reihe ist
+        /// reine Kuechen-Deko/Arbeitsplatz, keine eigene Gastfront.
+        /// </summary>
+        public static Vector3 GuestStandPosition(int stationIndex) =>
+            OnGround(ColumnPosition(stationIndex) + DepthDirection * (CounterGap + GuestStandDistance));
 
         /// <summary>
         /// Gemeinsame Warteschlange seitlich neben der Stationsreihe, auf
@@ -100,6 +132,29 @@ namespace RestaurantIdle.Game
         /// <summary>Eingang jenseits des letzten Warteplatzes -- Gaeste laufen von dort seitlich ins Bild herein.</summary>
         public static Vector3 Entrance =>
             OnGround(QueueSlot(QueueCapacity - 1) + RowDirection * 1.1f);
+
+        /// <summary>
+        /// Nutzer-Feedback ("linke Seite ist abgeschnitten", "Leute laufen
+        /// durch die Tische"): die Sitzgruppen im Gastraum wurden bisher
+        /// ueber StationPosition(i*2-1) verankert -- eine Formel aus der
+        /// alten 7-breiten Reihe, die zufaellig einen brauchbaren Abstand
+        /// ergab. Mit der neuen, schmaleren FrontRowCount-Reihe rueckte
+        /// dieselbe Formel spuerbar naeher an die Gast-Wartelinie
+        /// (GuestStandPosition/QueueSlot, Tiefe CounterGap+GuestStandDistance
+        /// ~1.45) heran -- Gaeste liefen sichtbar durch die Tische. Eine
+        /// eigene, zentrierte Formel mit klarem Tiefenabstand zur
+        /// Warteschlange behebt beides: genug Abstand zur Laufspur UND (ueber
+        /// RecomputeCameraTarget.Include) ein garantiert sichtbarer Rand.
+        /// </summary>
+        public const int DiningTableCount = 3;
+
+        private const float DiningTableSpacing = StationSpacing * 1.4f;
+
+        /// <summary>Tiefe der Sitzgruppen -- deutlich jenseits der Gast-Wartelinie (CounterGap + GuestStandDistance ~1.45), damit niemand beim Anstehen/Bedienen durch einen Tisch laeuft.</summary>
+        private const float DiningTableDepth = 2.8f;
+
+        public static Vector3 DiningTablePosition(int index) =>
+            RowDirection * ((index - (DiningTableCount - 1) / 2f) * DiningTableSpacing) + DepthDirection * DiningTableDepth;
 
         /// <summary>Ausgang auf der Gastraumseite, versetzt, damit hinausgehende Gaeste nicht durch die Schlange laufen.</summary>
         public static Vector3 Exit =>

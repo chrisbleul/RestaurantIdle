@@ -483,8 +483,15 @@ namespace RestaurantIdle.Game
         /// Maus-Pfad deshalb strikt getrennt statt Input.mousePosition auf
         /// Touch-Geraeten "mitlaufen" zu lassen.
         /// </summary>
-        /// <summary>Ab wie viel Bewegung (Pixel) aus einem Antippen ein Kamera-Ziehen wird.</summary>
-        private const float DragThresholdPixels = 18f;
+        /// <summary>
+        /// Ab wie viel Bewegung (Pixel) aus einem Antippen ein Kamera-Ziehen
+        /// wird. War 18 -- grosszuegiger gesetzt, damit minimales
+        /// Mauszittern (RDP-Maus, aber auch Finger auf Touch) ein Antippen
+        /// nicht faelschlich als Ziehen wertet. Der eigentliche
+        /// "kann kein Geraet anklicken"-Bug lag woanders, siehe
+        /// HandlePointerInput-Kommentar.
+        /// </summary>
+        private const float DragThresholdPixels = 32f;
 
         /// <summary>
         /// Nutzer-Feedback ("Kamera per Ziehen bewegen koennen"): Pan-Grenzen
@@ -543,17 +550,40 @@ namespace RestaurantIdle.Game
                 overUi = EventSystem.current.IsPointerOverGameObject();
             }
 
+            // Nutzer-Feedback ("kann kein Geraet anklicken"): bei
+            // niedriger Framerate (Software-Rendering, siehe README-
+            // Stolpersteine) liegen Maus-Runter UND Maus-Hoch eines
+            // schnellen Klicks manchmal im SELBEN Update-Frame -- Unity
+            // meldet dann down UND up gleichzeitig true. Das fruehere
+            // "return" direkt nach dem down-Zweig verhinderte, dass up in
+            // genau diesem Frame ueberhaupt noch geprueft wurde: der Tap
+            // verschwand spurlos, ohne jemals HandleTap zu erreichen (kein
+            // Log, kein Fehler -- einfach nichts). Deshalb jetzt kein
+            // fruehes Verlassen mehr bei down, und up wird VOR held
+            // geprueft (down+up im selben Frame bedeutet: nicht mehr
+            // gehalten).
             if (down)
             {
                 isPointerDown = !overUi;
                 isDraggingCamera = false;
                 pointerDownScreenPos = screenPosition;
                 lastPointerScreenPos = screenPosition;
-                return;
             }
 
             if (!isPointerDown)
             {
+                return;
+            }
+
+            if (up)
+            {
+                if (!isDraggingCamera && GameAssets.MainCamera != null)
+                {
+                    HandleTap(pointerDownScreenPos);
+                }
+
+                isPointerDown = false;
+                isDraggingCamera = false;
                 return;
             }
 
@@ -572,19 +602,6 @@ namespace RestaurantIdle.Game
                 {
                     PanCamera(screenDelta);
                 }
-
-                return;
-            }
-
-            if (up)
-            {
-                if (!isDraggingCamera && GameAssets.MainCamera != null)
-                {
-                    HandleTap(pointerDownScreenPos);
-                }
-
-                isPointerDown = false;
-                isDraggingCamera = false;
             }
         }
 
@@ -645,22 +662,17 @@ namespace RestaurantIdle.Game
         private const float GuestSpawnMinInterval = 1.5f;
         private const float GuestSpawnMaxInterval = 8f;
 
-        // Kenney-Sprite ist 96x128px bei 100 PPU (Unity-Default) = 0.96 x
-        // 1.28 Weltmasse nativ.
-        private const float GuestSpriteNativeHeight = 1.28f;
-
         // Nutzer-Feedback ("Personen im Verhaeltnis der Geraete skalieren"):
-        // vorher ein freistehender fester Wert (0.55), unabhaengig davon,
-        // wie gross die Kuechengeraete tatsaechlich skaliert wurden (CIBuild
-        // misst und skaliert jedes Geraet einzeln auf eine Zielgroesse).
-        // Jetzt ein Anteil von RestaurantLayout.CounterHeight -- derselben
-        // Referenz, auf deren Hoehe die Theke und alle Stationsgeraete
-        // stehen. 0.67 reproduziert die bisher von Hand austarierte
-        // Gast-Sprite-Hoehe (~0.7 Weltmasse) exakt, aendert sich aber jetzt
-        // automatisch mit, falls CounterHeight je angepasst wird.
+        // vorher ein freistehender fester Wert, unabhaengig davon, wie gross
+        // die Kuechengeraete tatsaechlich skaliert wurden (CIBuild misst und
+        // skaliert jedes Geraet einzeln auf eine Zielgroesse). Jetzt ein
+        // Anteil von RestaurantLayout.CounterHeight -- derselben Referenz,
+        // auf deren Hoehe Theke und Stationsgeraete stehen. Ziel ist eine
+        // Weltmass-HOEHE (nicht mehr ein Skalierungsfaktor wie beim alten
+        // 2D-Sprite): GameAssets.InstantiateRandomCharacter vermisst das
+        // instanziierte 3D-Modell und skaliert selbst darauf.
         private const float GuestHeightRatio = 0.67f;
-        private static readonly float GuestSpriteScale =
-            (RestaurantLayout.CounterHeight * GuestHeightRatio) / GuestSpriteNativeHeight;
+        private static readonly float GuestTargetHeight = RestaurantLayout.CounterHeight * GuestHeightRatio;
 
         /// <summary>
         /// Eingang, Ausgang, Warteplaetze und Wartepositionen stehen in
@@ -677,8 +689,8 @@ namespace RestaurantIdle.Game
         private static Vector3 GuestExit => RestaurantLayout.Exit;
 
         private Vector3 GuestStandPosition(int stationIndex) =>
-            stationWorldPositions.TryGetValue(stationIndex, out var position)
-                ? RestaurantLayout.GuestStandPosition(position)
+            stationWorldPositions.ContainsKey(stationIndex)
+                ? RestaurantLayout.GuestStandPosition(stationIndex)
                 : RestaurantLayout.Entrance;
 
         /// <summary>
@@ -777,7 +789,14 @@ namespace RestaurantIdle.Game
         /// Theke ausgerechnet die neuesten Stationen -- verschwindet hinter
         /// der Kopfleiste. Genau das war im Portrait-Testlauf zu sehen.
         /// </summary>
-        private const float HudTopFraction = 0.21f;
+        // Nutzer-Feedback ("der graue Balken oben kann viel kleiner"): war
+        // 0.21, passend zur alten 402px hohen Kopfleiste (TopBar 280 +
+        // GoalBar 96 + Abstaende). Die Kopfleiste selbst wurde in
+        // BuildTopBar/BuildGoalBar auf zusammen 262px verkleinert -- dieser
+        // Wert muss mitgehen, sonst rechnet RecomputeCameraTarget weiterhin
+        // mit der alten (zu grossen) freigehaltenen Flaeche und zoomt
+        // staerker raus als noetig.
+        private const float HudTopFraction = 0.14f;
         private const float HudBottomFraction = 0.10f;
         private static readonly Vector3 CameraBackOffset = new Vector3(0f, 0f, -15f);
         private float targetOrthoSize = MinOrthographicSize;
@@ -826,30 +845,20 @@ namespace RestaurantIdle.Game
         {
             var isVip = UnityEngine.Random.value < VipChance;
 
-            // PLANv3.md Abschnitt 5: Kenney-Toon-Character-Sprite statt
-            // eingefaerbter Kapsel. Kein Collider noetig -- anders als die
-            // Kapsel vorher blockiert ein SpriteRenderer ohne Collider von
-            // Natur aus keinen Raycast.
-            var guest = new GameObject(isVip ? "Guest_VIP" : "Guest", typeof(SpriteRenderer));
-            var spriteRenderer = guest.GetComponent<SpriteRenderer>();
-            spriteRenderer.sprite = GameAssets.LoadSprite("Characters/guest-idle");
-            spriteRenderer.color = isVip ? VipTint : Color.white;
-            guest.transform.localScale = Vector3.one * (isVip ? GuestSpriteScale * 1.15f : GuestSpriteScale);
-            if (GameAssets.MainCamera != null)
-            {
-                // Billboard: Sprite-Ebene richtet sich einmalig nach der
-                // (fest stehenden) Kamera aus, kein Nachfuehren pro Frame
-                // noetig -- die Kamera bewegt sich nirgends im Spiel.
-                guest.transform.rotation = GameAssets.MainCamera.transform.rotation;
-            }
+            // 3D-Mini-Character statt 2D-Sprite (siehe
+            // GameAssets.InstantiateRandomCharacter-Kommentar). Kein
+            // Collider auf dem Wurzel-Objekt noetig -- HandleTap rasterert
+            // nur gegen StationHotspot-Collider auf dem Mobiliar, nie gegen
+            // Gaeste/Personal.
+            var guest = new GameObject(isVip ? "Guest_VIP" : "Guest");
+            var mover = guest.AddComponent<GuestMover>();
+            mover.SpeedMultiplier = UnityEngine.Random.Range(0.85f, 1.2f);
+            var animator = guest.AddComponent<GuestSpriteAnimator>();
+            animator.Init(isVip ? GuestTargetHeight * 1.15f : GuestTargetHeight, isVip ? VipTint : (Color?)null);
+            mover.Init(GuestEntrance, GuestEntrance, GuestExit, waitsForService: false);
 
             // VIPs sind etwas groesser skaliert, ihr Schatten entsprechend.
             GroundShadow.Attach(guest.transform, isVip ? 0.42f : 0.38f, 0.3f);
-
-            var mover = guest.AddComponent<GuestMover>();
-            mover.SpeedMultiplier = UnityEngine.Random.Range(0.85f, 1.2f);
-            guest.AddComponent<GuestSpriteAnimator>();
-            mover.Init(GuestEntrance, GuestEntrance, GuestExit, waitsForService: false);
 
             var stationIndex = PickAvailableStationIndex();
             if (stationIndex.HasValue)
@@ -1304,20 +1313,34 @@ namespace RestaurantIdle.Game
                 return;
             }
 
-            // Eingang und der letzte Warteplatz muessen mit ins Bild --
+            // Der Wartebereich vor der ersten Station muss mit ins Bild --
             // sonst bleibt ausgerechnet die Warteschlange unsichtbar, die
             // die Kapazitaetsgrenze sichtbar machen soll.
-            // Der Wartebereich vor der ersten Station und die vorderen
-            // Warteplaetze muessen mit ins Bild -- sonst bleibt ausgerechnet
-            // die Warteschlange unsichtbar, die die Kapazitaetsgrenze
-            // sichtbar machen soll. Bewusst weder der Eingang noch der
-            // hinterste Platz: die Schlange ist selten voll, und im
-            // Fruehspiel (zwei sichtbare Stationen) haette der Eingang
-            // allein das Bild nach unten gezogen -- die Stationen sassen
-            // dann oben am Rand, waehrend zwei Drittel des Bildes leeren
-            // Laufweg zeigten.
-            Include(RestaurantLayout.GuestStandPosition(RestaurantLayout.StationPosition(0)));
+            Include(RestaurantLayout.GuestStandPosition(0));
             Include(RestaurantLayout.QueueSlot(1));
+
+            // Nutzer-Feedback ("muss zentriert werden", "Wand nicht
+            // komplett"): der Eingang liegt NUR auf der negativen
+            // RowDirection-Seite (die Schlange haengt seitlich an Station 0)
+            // -- ihn mit einzuschliessen zog minRight einseitig nach links,
+            // ohne Gegenstueck auf der rechten Seite. (minRight+maxRight)/2
+            // (der Bildmittelpunkt) wanderte dadurch spuerbar von der
+            // eigentlichen Reihe weg, und Tresen/Rueckwand (die auf die
+            // Reihenbreite zugeschnitten sind) deckten den jetzt breiteren,
+            // asymmetrischen Ausschnitt nicht mehr ab -- am Rand wurde Rasen
+            // statt Wand sichtbar. Bewusst NICHT mehr eingeschlossen: der
+            // gelegentlich abgeschnittene Eingangsrand wiegt weniger schwer
+            // als eine dauerhaft aussermittige Kamera.
+
+            // Nutzer-Feedback ("linke Seite ist abgeschnitten"): die
+            // Sitzgruppen im Gastraum (CIBuild.BuildGuestArea) werden IMMER
+            // gebaut, unabhaengig vom Spielfortschritt -- anders als
+            // Stationen waren sie hier aber nie Teil der Rahmung. Im
+            // Fruehspiel (nur 1-2 Stationen freigeschaltet) faellt die
+            // Rahmung dadurch enger aus als die tatsaechlich sichtbare
+            // Szene, und der aeusserste Tisch ragt ueber den Bildrand hinaus.
+            Include(RestaurantLayout.DiningTablePosition(0));
+            Include(RestaurantLayout.DiningTablePosition(RestaurantLayout.DiningTableCount - 1));
 
             var width = maxRight - minRight + CameraFramingMarginX;
             var height = maxUp - minUp + CameraFramingMarginY;
@@ -1543,32 +1566,15 @@ namespace RestaurantIdle.Game
                 return;
             }
 
-            // Charakter-Sprite statt eingefaerbter Kapsel -- dieselbe
-            // Begruendung wie bei den Gaesten (PLANv3 Abschnitt 5,
-            // "Charaktere statt Kapseln"). Die Kapsel war der letzte
-            // Platzhalter dieser Art in der Szene und stand als weisser
-            // Zylinder neben lauter Charakteren.
-            var worker = new GameObject($"Staff_{i}", typeof(SpriteRenderer));
-            var spriteRenderer = worker.GetComponent<SpriteRenderer>();
-            spriteRenderer.sprite = GameAssets.LoadSprite("Characters/guest-idle");
-
-            // Deutlich anderer Farbton als jeder Gast: der Spieler muss auf
+            // 3D-Mini-Character statt 2D-Sprite (siehe SpawnGuest-Kommentar).
+            // Leicht anderer Farbton als jeder Gast: der Spieler muss auf
             // einen Blick sehen koennen, welche Station bereits automatisch
             // bedient wird. Zusaetzlich eine Kochmuetze (siehe AttachChefHat)
-            // -- Nutzer-Feedback: Personal und Gast nutzten bisher exakt
-            // dasselbe Sprite, nur eingefaerbt. Eine zweite echte
-            // Charaktergrafik gibt es im Projekt nicht (nur die vier
-            // Kenney-Toon-Character-Bilder fuer Gaeste), die Muetze schafft
-            // stattdessen eine echte Silhouetten-Unterscheidung ohne neue
-            // Asset-Importe.
-            spriteRenderer.color = new Color(0.45f, 0.65f, 0.95f);
-            worker.transform.localScale = Vector3.one * (GuestSpriteScale * 0.95f);
-            if (GameAssets.MainCamera != null)
-            {
-                worker.transform.rotation = GameAssets.MainCamera.transform.rotation;
-            }
-
-            AttachChefHat(worker.transform);
+            // fuer eine echte Silhouetten-Unterscheidung, nicht nur Farbe.
+            var worker = new GameObject($"Staff_{i}");
+            var workerHeight = GuestTargetHeight * 0.95f;
+            var model = GameAssets.InstantiateRandomCharacter(worker.transform, workerHeight, new Color(0.7f, 0.82f, 1f));
+            AttachChefHat(worker.transform, workerHeight);
 
             // Auf der Kuechenseite der Station (Richtung Rueckwand) -- der
             // Warteplatz jenseits des Tresens gehoert dem Gast
@@ -1580,24 +1586,31 @@ namespace RestaurantIdle.Game
             GroundShadow.Attach(worker.transform, 0.36f, 0.28f);
 
             var staff = worker.AddComponent<StaffWorker>();
-            staff.Init(staffSpot, state.Stations[i].CycleSeconds(StationCatalog.All[i]));
+            staff.Init(staffSpot, model, state.Stations[i].CycleSeconds(StationCatalog.All[i]));
         }
 
         /// <summary>
-        /// Prozedural erzeugte Kochmuetze ueber dem Kopf des Personal-Sprites
+        /// Prozedural erzeugte Kochmuetze ueber dem Kopf des Personal-Modells
         /// -- echte Silhouetten-Unterscheidung zum Gast statt nur Einfaerbung
-        /// (siehe SpawnStaffWorker-Kommentar). Als eigenes Kind-GameObject,
-        /// nicht ins Guest-Sprite reingemalt: so bleibt das Basissprite
-        /// unveraendert wiederverwendbar und die Muetze folgt der Billboard-
-        /// Rotation automatisch mit.
+        /// (siehe SpawnStaffWorker-Kommentar). Bewusst NICHT Kind des
+        /// instanziierten 3D-Charaktermodells, sondern Geschwister davon:
+        /// StaffWorker.Update wackelt das Modell leicht um die Y-Achse
+        /// (siehe dort) -- als Kind haette die flache 2D-Sprite-Muetze
+        /// dieselbe Drehung mitgemacht und waere zeitweise kantenweise zur
+        /// Kamera gestanden. Die Kamerarotation selbst aendert sich im
+        /// gesamten Spiel nie (nur Position/Zoom, siehe ApplyCameraFraming),
+        /// deshalb reicht eine einmalig gesetzte Rotation statt eines
+        /// Nachfuehrens pro Frame.
         /// </summary>
-        private static void AttachChefHat(Transform parent)
+        private static void AttachChefHat(Transform parent, float workerHeight)
         {
             var hatGo = new GameObject("ChefHat", typeof(SpriteRenderer));
             hatGo.transform.SetParent(parent, worldPositionStays: false);
-            hatGo.transform.localPosition = new Vector3(0f, 0.62f, 0f);
-            hatGo.transform.localRotation = Quaternion.identity;
-            hatGo.transform.localScale = Vector3.one * 0.5f;
+            hatGo.transform.localPosition = new Vector3(0f, workerHeight * 0.92f, 0f);
+            hatGo.transform.localRotation = GameAssets.MainCamera != null
+                ? GameAssets.MainCamera.transform.rotation
+                : Quaternion.identity;
+            hatGo.transform.localScale = Vector3.one * (workerHeight * 0.5f);
 
             var renderer = hatGo.GetComponent<SpriteRenderer>();
             renderer.sprite = GameAssets.ChefHatSprite;
@@ -2346,31 +2359,36 @@ namespace RestaurantIdle.Game
         /// </summary>
         private void BuildTopBar()
         {
+            // Nutzer-Feedback ("der graue Balken oben kann viel kleiner"):
+            // war 280px hoch fuer zwei Textzeilen plus Button -- deutlich
+            // mehr als der Inhalt braucht. Auf 170px verkleinert (Schrift
+            // und Button proportional mitverkleinert), siehe
+            // HudTopFraction-Kommentar fuer die zugehoerige Zoom-Anpassung.
             var bar = CreateHudPanel("TopBar", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(-24f, 280f), new Vector2(0f, -14f));
+                new Vector2(-24f, 170f), new Vector2(0f, -12f));
 
             headerLabel = CreateHudText(bar, "Money", new Vector2(0f, 0.44f), new Vector2(1f, 1f),
-                new Vector2(34f, 0f), new Vector2(-210f, -14f), fontSize: 76, TextAnchor.MiddleLeft, Color.black);
+                new Vector2(30f, 0f), new Vector2(-170f, -10f), fontSize: 54, TextAnchor.MiddleLeft, Color.black);
 
             statsLabel = CreateHudText(bar, "Stats", new Vector2(0f, 0f), new Vector2(1f, 0.44f),
-                new Vector2(36f, 14f), new Vector2(-34f, 0f), fontSize: 24, TextAnchor.MiddleLeft,
+                new Vector2(32f, 10f), new Vector2(-30f, 0f), fontSize: 20, TextAnchor.MiddleLeft,
                 new Color(0.35f, 0.35f, 0.38f));
 
-            var settingsButton = CreateButton(bar, "Optionen", OpenSettings, preferredHeight: 84);
+            var settingsButton = CreateButton(bar, "Optionen", OpenSettings, preferredHeight: 64);
             settingsButton.GetComponent<Image>().color = DefaultButtonColor;
             var settingsRect = settingsButton.GetComponent<RectTransform>();
             settingsRect.anchorMin = new Vector2(1f, 1f);
             settingsRect.anchorMax = new Vector2(1f, 1f);
             settingsRect.pivot = new Vector2(1f, 1f);
-            settingsRect.sizeDelta = new Vector2(176f, 84f);
-            settingsRect.anchoredPosition = new Vector2(-22f, -18f);
-            settingsButton.GetComponentInChildren<Text>().fontSize = 24;
+            settingsRect.sizeDelta = new Vector2(140f, 64f);
+            settingsRect.anchoredPosition = new Vector2(-18f, -14f);
+            settingsButton.GetComponentInChildren<Text>().fontSize = 20;
         }
 
         private void BuildGoalBar()
         {
             var bar = CreateHudPanel("GoalBar", new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(-24f, 96f), new Vector2(0f, -306f));
+                new Vector2(-24f, 70f), new Vector2(0f, -192f));
 
             var trackGo = new GameObject("Track", typeof(Image));
             trackGo.transform.SetParent(bar, false);
@@ -2409,7 +2427,7 @@ namespace RestaurantIdle.Game
         private void BuildRushBanner()
         {
             var bar = CreateHudPanel("RushBanner", new Vector2(0.5f, 1f), new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
-                new Vector2(720f, 78f), new Vector2(0f, -424f));
+                new Vector2(720f, 78f), new Vector2(0f, -278f));
             bar.GetComponent<Image>().color = new Color(1f, 0.78f, 0.35f, 0.96f);
 
             CreateHudText(bar, "RushText", Vector2.zero, Vector2.one, new Vector2(20f, 0f), new Vector2(-20f, 0f),
